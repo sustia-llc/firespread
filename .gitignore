@@ -1,0 +1,12 @@
+/target
+__pycache__/
+/.vscode
+/data/
+
+# private working context, symlinked from the notes repo (bootstrap.sh)
+/CLAUDE.local.md
+/.claude/docs
+/.claude/plans
+/.claude/stack
+/.claude/commands
+/.claude/settings.local.json
