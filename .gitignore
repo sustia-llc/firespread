@@ -10,3 +10,6 @@ __pycache__/
 /.claude/stack
 /.claude/commands
 /.claude/settings.local.json
+/runs/
+/.venv/
+*.egg-info/

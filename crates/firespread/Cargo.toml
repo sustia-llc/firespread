@@ -1,0 +1,13 @@
+[package]
+name = "firespread"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Command-line entry point for the firespread engine"
+
+[[bin]]
+name = "firespread"
+path = "src/main.rs"
+
+[dependencies]
+thiserror.workspace = true

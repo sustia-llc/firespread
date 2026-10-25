@@ -1,0 +1,12 @@
+[package]
+name = "firespread-ensemble"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Ensembles of spread runs over perturbed inputs"
+
+[lib]
+doctest = false
+
+[dependencies]
+thiserror.workspace = true

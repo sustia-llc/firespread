@@ -1,0 +1,12 @@
+[package]
+name = "firespread-spread"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Fire front propagation over a grid driven by the Rothermel surface model"
+
+[lib]
+doctest = false
+
+[dependencies]
+thiserror.workspace = true

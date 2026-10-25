@@ -1,0 +1,12 @@
+[package]
+name = "firespread-agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Agent coalitions that steer and interpret spread runs"
+
+[lib]
+doctest = false
+
+[dependencies]
+thiserror.workspace = true

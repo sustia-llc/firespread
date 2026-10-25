@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "firespread-prep"
+version = "0.1.0"
+description = "Data preparation for the firespread Hermits Peak / Calf Canyon 2022 case"
+requires-python = ">=3.12"
+dependencies = [
+    "geopandas",
+    "pyogrio",
+    "rasterio",
+    "pyproj",
+    "shapely",
+    "numpy",
+    "requests",
+]
+
+[tool.setuptools.packages.find]
+include = ["firespread_prep*"]

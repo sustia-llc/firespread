@@ -1,0 +1,12 @@
+[package]
+name = "firespread-grid"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Raster grid of fuel, terrain and weather cells for the spread engine"
+
+[lib]
+doctest = false
+
+[dependencies]
+thiserror.workspace = true

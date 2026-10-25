@@ -1,0 +1,12 @@
+[package]
+name = "firespread-metrics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Scores of simulated fire perimeters against observed ones"
+
+[lib]
+doctest = false
+
+[dependencies]
+thiserror.workspace = true
