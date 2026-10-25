@@ -154,6 +154,18 @@ fn live_sav(code: &str, field: &'static str, value: f64) -> Result<Option<f64>> 
     }
 }
 
+/// Scott and Burgan 2005 RMRS-GTR-153 p. 3 gives GR6 a heat content of
+/// 9,000 Btu/lb and every other model 8,000. The FireBench CSV embedded here
+/// writes 8,000 for GR6 and is kept verbatim. Owner ruling 2026-10-25: the
+/// paper wins.
+fn paper_overrides(code: &str, heat_btu_per_lb: f64) -> f64 {
+    if code == "GR6" {
+        9000.0
+    } else {
+        heat_btu_per_lb
+    }
+}
+
 fn row_to_model(index: usize, row: Row) -> Result<FuelModel> {
     let code = row.fuel_model_code;
     let dynamic = match row.fuel_model_type.as_str() {
@@ -188,7 +200,10 @@ fn row_to_model(index: usize, row: Row) -> Result<FuelModel> {
             row.dead_fuel_extinction_moisture,
             true,
         )?,
-        heat_btu_per_lb: check(&code, "heat_content", row.heat_content, true)?,
+        heat_btu_per_lb: paper_overrides(
+            &code,
+            check(&code, "heat_content", row.heat_content, true)?,
+        ),
         code,
     })
 }
@@ -249,15 +264,22 @@ mod tests {
         assert_eq!(gr1.heat_btu_per_lb, 8000.0);
     }
 
-    /// Scott and Burgan (2005) list GR6 at 9,000 Btu/lb; the FireBench table
-    /// embedded here writes 8,000. This pins what the table says.
     #[test]
-    fn gr6_heat_as_tabulated() {
+    fn gr6_heat_follows_the_paper() {
         let gr6 = by_code("GR6").unwrap();
         assert_eq!(
-            gr6.heat_btu_per_lb, 8000.0,
-            "GR6 heat_content from the FireBench table"
+            gr6.heat_btu_per_lb, 9000.0,
+            "GR6 heat_content per Scott and Burgan 2005 p. 3, overriding the FireBench table"
         );
+        for model in scott_burgan_40().unwrap() {
+            if model.code != "GR6" {
+                assert_eq!(
+                    model.heat_btu_per_lb, 8000.0,
+                    "{} heat_content per Scott and Burgan 2005 p. 3",
+                    model.code
+                );
+            }
+        }
     }
 
     #[test]
