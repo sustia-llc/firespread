@@ -1,0 +1,8 @@
+# Run settings for window w3 (`firespread ensemble --window w3 --config`).
+# Road codes 1 to 4 are non-burnable, the 24 h horizon matches the w3
+# target, and night hours take the D3 dead fuel moisture scenario.
+road_barrier_codes = [1, 2, 3, 4]
+horizons_h = [1, 3, 6, 12, 24]
+
+[night_moisture]
+scenario = "D3"
