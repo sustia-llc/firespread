@@ -3,10 +3,13 @@ name = "firespread-spread"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Fire front propagation over a grid driven by the Rothermel surface model"
+description = "Minimum-travel-time fire spread over a grid of square cells"
 
 [lib]
 doctest = false
 
 [dependencies]
 thiserror.workspace = true
+
+[dev-dependencies]
+anyhow = "1"
