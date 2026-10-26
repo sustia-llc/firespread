@@ -123,7 +123,8 @@ final perimeter.
 
 These numbers come from runs on 2026-10-26: seed 7, 200 members, road classes
 1 to 4 as barriers. Window w3 also uses the D3 night moisture setting. The
-kernel has no calibration yet, and it loses to both baselines in every window.
+kernel has no calibration yet. It loses to persistence in every window, and to
+uniform growth in w2 and w3.
 
 | Window | Period (UTC) | firespread Jaccard | Persistence Jaccard | Uniform growth Jaccard | firespread Brier | Persistence Brier | Uniform growth Brier |
 |---|---|---|---|---|---|---|---|
@@ -150,7 +151,7 @@ about 0.94 and its precision about 0.70.
 | `python/oracle` | Scripts that write reference values from FireBench and pyretechnics for the Rust tests. |
 | `ui/` | The static web page. |
 | `config/` | Run configurations. |
-| `docs/` | Notes on differences against the reference models, and the diagrams of this file. |
+| `docs/` | The demo guide, notes on differences against the reference models, and the diagrams of this file. |
 
 ## Requirements
 
@@ -238,6 +239,11 @@ The `[night_moisture]` table takes these keys:
 | `custom_pct` | Three percentages for 1-h, 10-h and 100-h fuel. Required only for `custom`. | none |
 | `start_local`, `end_local` | Night period in local time, from Rothermel (1983) INT-143 Table E. | `"20:00"`, `"07:59"` |
 | `utc_offset_h` | Hours from UTC to local time. | `-6` (MDT) |
+
+## Demo
+
+`docs/demo.md` gives the commands for the demo runs, the page servers and a
+live forecast, and lists what to show.
 
 ## View the results
 
