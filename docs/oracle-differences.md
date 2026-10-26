@@ -13,7 +13,7 @@ Both fixtures cover the 40 Scott and Burgan models. They use the dead moisture s
 | `firebench_single_class.json` | `python/oracle/firebench_rothermel_fixture.py` | 2615 | 1-h load and SAV only, the oracle's fixed heat. The oracle clamps 385 cases at 6 m/s, and the fixture omits them. |
 | `pyretechnics_multi_class.json` | `python/oracle/pyretechnics_multi_class_fixture.py` | 3000 | The full fuel model, live scenario L2 (60 % herbaceous, 90 % woody), wind blowing upslope. |
 
-Regenerate the fixtures with the venvs `~/.venvs/firespread` (FireBench) and `~/.venvs/pyretechnics`. Print the comparison tables with `cargo run -p firespread-rothermel --example oracle_differences`.
+Regenerate the fixtures with two venvs: one with FireBench, and one with pyretechnics. Print the comparison tables with `cargo run -p firespread-rothermel --example oracle_differences`.
 
 ## Single-class mode against FireBench (gate, 1 %)
 
