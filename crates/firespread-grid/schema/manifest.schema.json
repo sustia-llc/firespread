@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "firespread run manifest",
+  "description": "Inputs, parameters and outputs of one firespread forecast run, version 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "run_id",
+    "window",
+    "grid",
+    "inputs",
+    "hrrr_source",
+    "seed",
+    "wind_limit",
+    "members",
+    "horizons_h",
+    "outputs"
+  ],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "run_id": { "type": "string" },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "start_t", "target_t", "fireids"],
+      "properties": {
+        "name": { "type": "string" },
+        "start_t": { "type": "string", "format": "date-time" },
+        "target_t": { "type": "string", "format": "date-time" },
+        "fireids": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+        }
+      }
+    },
+    "grid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nx", "ny", "dx", "dy", "origin_x", "origin_y", "epsg", "nodata"],
+      "properties": {
+        "nx": { "type": "integer", "minimum": 1 },
+        "ny": { "type": "integer", "minimum": 1 },
+        "dx": { "type": "number", "exclusiveMinimum": 0 },
+        "dy": { "type": "number", "exclusiveMinimum": 0 },
+        "origin_x": { "type": "number" },
+        "origin_y": { "type": "number" },
+        "epsg": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "nodata": { "type": "number" }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "hrrr_source": { "type": "string" },
+    "seed": { "type": "integer", "minimum": 0, "maximum": 18446744073709551615 },
+    "wind_limit": { "type": "string", "enum": ["none", "rothermel", "effective_wind"] },
+    "members": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+    "horizons_h": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0, "maximum": 4294967295 }
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

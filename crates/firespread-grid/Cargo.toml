@@ -9,4 +9,11 @@ description = "Raster grid of fuel, terrain and weather cells for the spread eng
 doctest = false
 
 [dependencies]
+flate2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tiff.workspace = true
+
+[dev-dependencies]
+anyhow = "1"
