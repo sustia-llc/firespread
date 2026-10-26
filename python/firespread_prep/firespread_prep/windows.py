@@ -9,6 +9,7 @@ import geopandas as gpd
 import pandas as pd
 
 from .paths import FEDS_NEWFIREPIX_GPKG, FEDS_PERIMETERS_GPKG, WINDOWS_JSON
+from .rasterize import complex_fireids
 
 WINDOW_LABELS = (
     ("w1", "2022-04-22T12:00:00", "2022-04-23T00:00:00"),
@@ -96,8 +97,11 @@ def build_windows(perims: gpd.GeoDataFrame, pix: gpd.GeoDataFrame) -> dict:
 def main(argv: list[str] | None = None) -> int:
     perims = gpd.read_file(FEDS_PERIMETERS_GPKG)
     perims["t"] = pd.to_datetime(perims["t"])
+    keep = complex_fireids(perims)
+    perims = perims[perims["fireID"].astype(int).isin(keep)]
     pix = gpd.read_file(FEDS_NEWFIREPIX_GPKG)
     pix["t"] = pd.to_datetime(pix["t"])
+    pix = pix[pix["fireID"].astype(int).isin(keep)]
     result = build_windows(perims, pix)
     WINDOWS_JSON.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
