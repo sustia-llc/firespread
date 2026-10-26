@@ -50,6 +50,15 @@ pub enum MetricsError {
         value: f64,
         admissible: &'static str,
     },
+    /// No buffer distance of the start mask covers the target cell count.
+    #[error(
+        "no buffer of the {start_cells}-cell start mask reaches {target_cells} cells; the whole grid buffer holds {max_cells}"
+    )]
+    UnreachableTarget {
+        start_cells: usize,
+        target_cells: usize,
+        max_cells: usize,
+    },
 }
 
 pub type Result<T> = core::result::Result<T, MetricsError>;
@@ -308,6 +317,65 @@ pub fn uniform_growth(start: &Mask, dx_m: f64, rate_m_per_h: f64, hours: f64) ->
     Mask::new(start.rows, start.cols, cells)
 }
 
+/// Fitted uniform-growth radius, metres: an `R` within `tolerance_m` above the
+/// smallest distance `R*` for which `uniform_growth(start, dx_m, R, 1.0)` holds at
+/// least `target_cells` cells, so `R* <= R <= R* + tolerance_m` and the buffer at `R`
+/// holds at least `target_cells` cells. Returns 0 when `start` alone holds at least
+/// `target_cells` cells. Found by bisection on `[0, hi]`, where `hi` is the first of
+/// `dx_m, 2 dx_m, 4 dx_m, …` whose buffer reaches the target. Cell counts use the
+/// distances of [`uniform_growth`]. `dx_m` and `tolerance_m` are finite and positive.
+/// Fails with [`MetricsError::EmptyPerimeters`] for an empty `start` and
+/// [`MetricsError::UnreachableTarget`] when `target_cells` exceeds the grid.
+pub fn fit_uniform_growth_radius(
+    start: &Mask,
+    target_cells: usize,
+    dx_m: f64,
+    tolerance_m: f64,
+) -> Result<f64> {
+    check_param("dx_m", dx_m, true)?;
+    check_param("tolerance_m", tolerance_m, true)?;
+    let start_cells = start.count();
+    if start_cells == 0 {
+        return Err(MetricsError::EmptyPerimeters {
+            metric: "uniform growth fit",
+        });
+    }
+    if target_cells > start.cells.len() {
+        return Err(MetricsError::UnreachableTarget {
+            start_cells,
+            target_cells,
+            max_cells: start.cells.len(),
+        });
+    }
+    if start_cells >= target_cells {
+        return Ok(0.0);
+    }
+    let cell_area = dx_m * dx_m;
+    let squared = distance::squared_edt(start.rows, start.cols, &start.cells);
+    let count = |radius_m: f64| {
+        let limit = radius_m * radius_m;
+        squared
+            .iter()
+            .filter(|&&d2| d2 * cell_area <= limit)
+            .count()
+    };
+    let mut lo = 0.0_f64;
+    let mut hi = dx_m;
+    while count(hi) < target_cells {
+        lo = hi;
+        hi *= 2.0;
+    }
+    while hi - lo > tolerance_m {
+        let mid = 0.5 * (lo + hi);
+        if count(mid) >= target_cells {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    Ok(hi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -510,6 +578,104 @@ mod tests {
         let grown = uniform_growth(&start, 30.0, 1000.0, 10.0).unwrap();
         assert_eq!(grown.count(), 0, "burned cells from an empty start");
         assert_eq!((grown.rows(), grown.cols()), (3, 3));
+    }
+
+    #[test]
+    fn hand_fixture_fitted_radius() {
+        // One centre cell of a 7 x 7 grid, dx 30 m. Buffer cell counts by radius:
+        // 1 below 30 m; 5 on [30, 42.43); 9 on [30√2, 60); 13 on [60, 67.08).
+        let mut bits = [0_u8; 49];
+        bits[3 * 7 + 3] = 1;
+        let start = mask(7, 7, &bits);
+        for (target, r_star) in [
+            (1_usize, 0.0_f64),
+            (2, 30.0),
+            (5, 30.0),
+            (6, 30.0 * 2_f64.sqrt()),
+            (9, 30.0 * 2_f64.sqrt()),
+            (10, 60.0),
+            (13, 60.0),
+        ] {
+            let r = fit_uniform_growth_radius(&start, target, 30.0, 1.0).unwrap();
+            assert!(
+                r >= r_star && r <= r_star + 1.0,
+                "target {target}: fitted {r} m, expected within [{r_star}, {}]",
+                r_star + 1.0
+            );
+            let grown = uniform_growth(&start, 30.0, r, 1.0).unwrap().count();
+            assert!(
+                grown >= target,
+                "target {target}: buffer at {r} m holds {grown} cells"
+            );
+        }
+    }
+
+    #[test]
+    fn fitted_radius_is_monotone_and_minimal() {
+        // An L-shaped start on a 20 x 25 grid; every target count from the start
+        // size to the grid size.
+        let (rows, cols) = (20, 25);
+        let mut bits = vec![0_u8; rows * cols];
+        for r in 5..12 {
+            bits[r * cols + 8] = 1;
+        }
+        for c in 8..15 {
+            bits[11 * cols + c] = 1;
+        }
+        let start = mask(rows, cols, &bits);
+        let mut previous = 0.0_f64;
+        for target in start.count()..=rows * cols {
+            let r = fit_uniform_growth_radius(&start, target, 30.0, 1.0).unwrap();
+            assert!(
+                r >= previous,
+                "target {target}: fitted {r} m below the previous fit {previous} m"
+            );
+            let at = uniform_growth(&start, 30.0, r, 1.0).unwrap().count();
+            assert!(at >= target, "target {target}: buffer at {r} m holds {at}");
+            if r > 1.0 {
+                let below = uniform_growth(&start, 30.0, r - 1.0, 1.0).unwrap().count();
+                assert!(
+                    below < target,
+                    "target {target}: buffer at {} m already holds {below}",
+                    r - 1.0
+                );
+            }
+            previous = r;
+        }
+    }
+
+    #[test]
+    fn fitted_radius_rejects_empty_start_and_unreachable_target() {
+        let empty = mask(2, 2, &[0, 0, 0, 0]);
+        let got = fit_uniform_growth_radius(&empty, 1, 30.0, 1.0);
+        assert!(
+            matches!(got, Err(MetricsError::EmptyPerimeters { .. })),
+            "empty start: got {got:?}"
+        );
+        let one = mask(2, 2, &[1, 0, 0, 0]);
+        let got = fit_uniform_growth_radius(&one, 5, 30.0, 1.0);
+        assert!(
+            matches!(
+                got,
+                Err(MetricsError::UnreachableTarget {
+                    start_cells: 1,
+                    target_cells: 5,
+                    max_cells: 4
+                })
+            ),
+            "target above the grid: got {got:?}"
+        );
+        let got = fit_uniform_growth_radius(&one, 4, 30.0, 0.0);
+        assert!(
+            matches!(
+                got,
+                Err(MetricsError::InvalidParameter {
+                    name: "tolerance_m",
+                    ..
+                })
+            ),
+            "zero tolerance: got {got:?}"
+        );
     }
 
     #[test]

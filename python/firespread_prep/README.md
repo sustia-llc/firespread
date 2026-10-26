@@ -83,6 +83,14 @@ divided by 10, and CBD by 100. Writes one Float32 Deflate GeoTIFF per layer to
 synthetic 3 by 3 raster. Run it with
 `python -m unittest discover -s python/firespread_prep/tests`.
 
+## feds_geojson
+
+Reads `data/feds/hermits_perimeters.gpkg` and keeps the rows of one fire
+(`--fireid`, default 35131). For each timestep `t` it writes
+`data/obs/feds_geojson/<YYYYmmddTHHMM>.geojson`: a FeatureCollection in
+EPSG:4326 of that fire's perimeter rows, with properties `t`, `fireID` and
+`farea`. `tests/test_feds_geojson.py` runs it on two synthetic fires.
+
 ## inspect_feds
 
 Prints the CRS, fields, dtypes, feature count and three rows of each FEDS

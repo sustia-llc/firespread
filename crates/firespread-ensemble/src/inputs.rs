@@ -63,6 +63,28 @@ fn check_len(layer: &'static str, expected: usize, got: usize) -> Result<()> {
     }
 }
 
+/// Water code [`apply_road_barriers`] writes at a barrier road cell.
+pub const ROAD_BARRIER_WATER_CODE: u8 = u8::MAX;
+
+/// Marks road cells as non-burnable through the water layer: at each cell
+/// whose `water` code is 0 and whose `roads` code is in `codes`, sets `water`
+/// to [`ROAD_BARRIER_WATER_CODE`]. Returns the number of cells changed. An
+/// empty `codes` changes nothing.
+///
+/// # Errors
+/// [`EnsembleError::LayerLength`] when `roads` and `water` differ in length.
+pub fn apply_road_barriers(water: &mut [u8], roads: &[u8], codes: &[u8]) -> Result<usize> {
+    check_len("roads", water.len(), roads.len())?;
+    let mut changed = 0;
+    for (w, r) in water.iter_mut().zip(roads) {
+        if *w == 0 && codes.contains(r) {
+            *w = ROAD_BARRIER_WATER_CODE;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
 fn same_geometry(a: &GridHeader, b: &GridHeader) -> bool {
     GridHeader { nodata: 0.0, ..*a }.same_grid(&GridHeader { nodata: 0.0, ..*b })
 }

@@ -24,7 +24,7 @@ pub use hourly::{
     HourlyPerturbation, HourlyStats, MemberDraw, N_MODELS, S_PER_HOUR, run_hourly_ensemble,
     run_hourly_member, write_probability_cogs,
 };
-pub use inputs::{Inputs, Layers};
+pub use inputs::{Inputs, Layers, ROAD_BARRIER_WATER_CODE, apply_road_barriers};
 pub use member::{MemberBuffers, MemberFields, MemberParams, run_member};
 pub use moisture::{DeadFuelMoisture, SkyEdges};
 pub use waf::{Canopy, WafRule};

@@ -25,8 +25,10 @@ tokio-rayon = "2.1.0"
 tokio-util = { version = "0.7.20", default-features = false }
 tracing = "0.1.44"
 
+firespread-agents = { path = "crates/firespread-agents" }
 firespread-ensemble = { path = "crates/firespread-ensemble" }
 firespread-fuel = { path = "crates/firespread-fuel" }
 firespread-grid = { path = "crates/firespread-grid" }
+firespread-metrics = { path = "crates/firespread-metrics" }
 firespread-rothermel = { path = "crates/firespread-rothermel" }
 firespread-spread = { path = "crates/firespread-spread" }

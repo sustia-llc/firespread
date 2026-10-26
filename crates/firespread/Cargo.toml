@@ -14,13 +14,18 @@ name = "serve"
 required-features = ["serve"]
 
 [features]
-serve = ["dep:axum", "dep:tower-http", "dep:tokio"]
+serve = ["dep:axum", "dep:tower-http"]
 
 [dependencies]
-thiserror.workspace = true
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+config = { version = "0.15.27", default-features = false, features = ["toml"] }
+firespread-agents.workspace = true
+firespread-ensemble.workspace = true
+firespread-grid.workspace = true
+firespread-metrics.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
 axum = { version = "0.8.9", optional = true }
 tower-http = { version = "0.7.1", features = ["fs"], optional = true }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"], optional = true }
-
-[dev-dependencies]
-anyhow = "1"
