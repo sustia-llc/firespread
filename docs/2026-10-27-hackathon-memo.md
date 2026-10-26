@@ -9,8 +9,10 @@ freeze/hackathon`, run until no finding refutes a claim. Then the tag
 
 Before 14:30 on 2026-10-27:
 
-- [ ] Push `main`. The push closes issues #1 to #6.
-- [ ] Open the page in a browser on w1 and make sure that these work:
+- [x] Push `main`. The push closes issues #1 to #6. Done 2026-10-26 at
+  `d34a5d3`.
+- [x] Open the page in a browser on w1 and make sure that these work. The
+  owner checked them on 2026-10-26:
   - the burn probability slider and the confusion map radio pair
   - the five tolerant metrics in the metric menu, with the meter axis for the
     two distance metrics
