@@ -13,4 +13,4 @@ pub use ensemble::{Counts, MemberSummary, Perturbation, run_ensemble};
 pub use error::{EnsembleError, Result};
 pub use fbfm40::{BURNABLE_FBFM40, Fbfm40, classify_fbfm40};
 pub use inputs::{Inputs, Layers};
-pub use member::{MemberBuffers, MemberParams, run_member};
+pub use member::{MemberBuffers, MemberFields, MemberParams, run_member};

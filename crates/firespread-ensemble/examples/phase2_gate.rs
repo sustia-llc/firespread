@@ -12,7 +12,9 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use firespread_ensemble::{Inputs, MemberBuffers, MemberParams, Perturbation, run_ensemble};
+use firespread_ensemble::{
+    Inputs, MemberBuffers, MemberParams, Perturbation, run_ensemble, run_member,
+};
 use firespread_fuel::Moistures;
 use firespread_grid::{Grid, write_cog};
 use firespread_rothermel::WindLimit;
@@ -105,34 +107,28 @@ fn main() -> Result<()> {
 
     let mut workspace = Workspace::new();
     let mut buffers = MemberBuffers::new(&inputs);
-    let (mut fields_s, mut spread_s, mut total_s) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut total_s, mut expanded_cells) = (Vec::new(), Vec::new());
     for member in 0..SINGLE_THREAD_MEMBERS {
         let params = perturbation.draw(SEED, member)?;
         let t = Instant::now();
-        buffers.fill_fields(&inputs, &params)?;
-        let f = t.elapsed().as_secs_f64();
-        let t = Instant::now();
-        let stats = buffers.spread(&inputs, &mut workspace, horizon_max)?;
+        let stats = run_member(&inputs, &params, &mut workspace, &mut buffers, horizon_max)?;
         let s = t.elapsed().as_secs_f64();
         writeln!(
             out,
-            "single-thread member {member}: wind {:.3} m/s toward {:.2} deg; fields {f:.3} s, \
-             spread {s:.3} s, total {:.3} s; expanded {} cells",
+            "single-thread member {member}: wind {:.3} m/s toward {:.2} deg; \
+             total (lazy fields + spread) {s:.3} s; expanded {} cells",
             params.midflame_wind_m_s,
             params.wind_toward_azimuth_rad.to_degrees(),
-            f + s,
             stats.expanded
         )?;
-        fields_s.push(f);
-        spread_s.push(s);
-        total_s.push(f + s);
+        total_s.push(s);
+        expanded_cells.push(stats.expanded as f64);
     }
     writeln!(
         out,
-        "single-thread per-member median: total {:.3} s (field precompute {:.3} s, spread {:.3} s)",
+        "single-thread per-member median: total {:.3} s, expanded {} cells",
         median(total_s),
-        median(fields_s),
-        median(spread_s)
+        median(expanded_cells)
     )?;
 
     let t = Instant::now();

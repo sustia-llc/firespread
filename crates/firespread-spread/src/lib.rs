@@ -196,6 +196,47 @@ impl<'a> SpreadFields<'a> {
     pub fn grid(&self) -> Grid {
         self.grid
     }
+
+    /// Burnability per cell.
+    #[must_use]
+    pub fn burnable(&self) -> &'a [bool] {
+        self.burnable
+    }
+}
+
+/// Head spread rate (m/s), ellipse eccentricity (0 = circle) and head azimuth
+/// (radians clockwise from north) of one cell.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct CellFields {
+    pub head_ros_m_s: f32,
+    pub eccentricity: f32,
+    pub max_azimuth_rad: f32,
+}
+
+/// Source of the [`CellFields`] of a cell, queried by
+/// [`Workspace::simulate_window_with`] with the index of each cell it expands.
+pub trait FieldProvider {
+    /// Error of a failed query; spread errors convert into it.
+    type Error: From<SpreadError>;
+
+    /// The fields of `cell`, an index below the grid's `len()`.
+    ///
+    /// # Errors
+    /// Whatever the provider fails with.
+    fn fields(&mut self, cell: usize) -> core::result::Result<CellFields, Self::Error>;
+}
+
+impl FieldProvider for SpreadFields<'_> {
+    type Error = SpreadError;
+
+    /// The slice values at `cell`.
+    fn fields(&mut self, cell: usize) -> Result<CellFields> {
+        Ok(CellFields {
+            head_ros_m_s: self.head_ros_m_s[cell],
+            eccentricity: self.eccentricity[cell],
+            max_azimuth_rad: self.max_azimuth_rad[cell],
+        })
+    }
 }
 
 /// Counts from one call of [`Workspace::simulate_window`].
@@ -358,6 +399,7 @@ struct Edge {
 }
 
 impl Edge {
+    #[inline(always)]
     fn blocked(&self, burnable: &[bool], u: usize) -> bool {
         let open = |off: isize| burnable[u.wrapping_add_signed(off)];
         self.cells[..self.n_cells].iter().any(|&o| !open(o))
@@ -456,20 +498,51 @@ impl Workspace {
         t_start_s: f32,
         t_end_s: f32,
     ) -> Result<WindowStats> {
-        let grid = fields.grid;
+        let mut provider = *fields;
+        self.simulate_window_with(
+            fields.grid,
+            fields.burnable,
+            &mut provider,
+            arrival_s,
+            t_start_s,
+            t_end_s,
+        )
+    }
+
+    /// [`Workspace::simulate_window`] with each expanded cell's
+    /// [`CellFields`] taken from `provider` when the cell is expanded. The
+    /// provider is called once per expanded cell, with that cell's index, and
+    /// is not called for any other cell.
+    ///
+    /// # Errors
+    /// [`SpreadError::FieldLength`] when `burnable` or `arrival_s` does not
+    /// hold one value per cell, the other errors of
+    /// [`Workspace::simulate_window`], each converted into `P::Error`, with
+    /// `arrival_s` unchanged; and the first error `provider` returns, with
+    /// `arrival_s` partly updated.
+    pub fn simulate_window_with<P: FieldProvider>(
+        &mut self,
+        grid: Grid,
+        burnable: &[bool],
+        provider: &mut P,
+        arrival_s: &mut [f32],
+        t_start_s: f32,
+        t_end_s: f32,
+    ) -> core::result::Result<WindowStats, P::Error> {
+        check_len("burnable", grid.len(), burnable.len())?;
         check_len("arrival_s", grid.len(), arrival_s.len())?;
         if !t_start_s.is_finite() || t_end_s.is_nan() || t_end_s < t_start_s {
             return Err(SpreadError::InvalidWindow {
                 t_start_s: f64::from(t_start_s),
                 t_end_s: f64::from(t_end_s),
-            });
+            }
+            .into());
         }
         if let Some(index) = arrival_s.iter().position(|t| t.is_nan()) {
-            return Err(SpreadError::NanArrival { index });
+            return Err(SpreadError::NanArrival { index }.into());
         }
         let edges = stencil(grid)?;
         let (nx, ny) = (grid.nx, grid.ny);
-        let burnable = fields.burnable;
 
         for t in arrival_s.iter_mut() {
             if *t > t_start_s {
@@ -501,9 +574,12 @@ impl Workspace {
                 continue;
             }
             stats.expanded += 1;
-            let head = fields.head_ros_m_s[u];
-            let e = fields.eccentricity[u];
-            let (sin_phi, cos_phi) = fields.max_azimuth_rad[u].sin_cos();
+            let CellFields {
+                head_ros_m_s: head,
+                eccentricity: e,
+                max_azimuth_rad,
+            } = provider.fields(u)?;
+            let (sin_phi, cos_phi) = max_azimuth_rad.sin_cos();
             let numerator = head * (1.0 - e);
             let (row, col) = (u / nx, u % nx);
             let interior = row >= 3 && row + 3 < ny && col >= 3 && col + 3 < nx;

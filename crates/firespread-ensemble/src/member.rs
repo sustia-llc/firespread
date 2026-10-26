@@ -1,10 +1,10 @@
 //! One ensemble member: per-cell spread fields and one spread window.
 
 use firespread_rothermel::DirectionalEnvironment;
-use firespread_spread::{SpreadFields, WindowStats, Workspace};
+use firespread_spread::{CellFields, FieldProvider, SpreadFields, WindowStats, Workspace};
 
-use crate::Result;
 use crate::inputs::{Inputs, NON_BURNABLE};
+use crate::{EnsembleError, Result};
 
 /// Wind of one member, uniform over the grid.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -15,7 +15,62 @@ pub struct MemberParams {
     pub wind_toward_azimuth_rad: f64,
 }
 
-/// Per-member `f32` fields and arrival field, reused across members.
+/// The fields of one member, evaluated per cell on demand: a
+/// [`FieldProvider`] whose [`FieldProvider::fields`] is
+/// [`MemberFields::eval`].
+#[derive(Debug, Clone, Copy)]
+pub struct MemberFields<'a> {
+    inputs: &'a Inputs,
+    params: MemberParams,
+}
+
+impl<'a> MemberFields<'a> {
+    /// The fields of the member with wind `params` over `inputs`.
+    #[must_use]
+    pub fn new(inputs: &'a Inputs, params: MemberParams) -> Self {
+        Self { inputs, params }
+    }
+
+    /// The head rate, eccentricity and head azimuth of cell `cell`: its fuel
+    /// model's [`firespread_rothermel::DirectionalModel::eval`] at the
+    /// member's wind and the cell's slope, each cast to `f32`, at a burnable
+    /// cell, and all 0 at a non-burnable cell.
+    ///
+    /// # Errors
+    /// The Rothermel error of the evaluation.
+    ///
+    /// # Panics
+    /// When `cell >= inputs.len()`.
+    pub fn eval(&self, cell: usize) -> Result<CellFields> {
+        let inputs = self.inputs;
+        let m = inputs.model_of_cell[cell];
+        if m == NON_BURNABLE {
+            return Ok(CellFields::default());
+        }
+        let out = inputs.models[usize::from(m)].eval(&DirectionalEnvironment {
+            midflame_wind_m_s: self.params.midflame_wind_m_s,
+            wind_toward_azimuth_rad: self.params.wind_toward_azimuth_rad,
+            slope_tan: inputs.slope_tan[cell],
+            upslope_azimuth_rad: inputs.upslope_azimuth_rad[cell],
+        })?;
+        Ok(CellFields {
+            head_ros_m_s: out.head_ros_m_s as f32,
+            eccentricity: out.eccentricity as f32,
+            max_azimuth_rad: out.max_spread_azimuth_rad as f32,
+        })
+    }
+}
+
+impl FieldProvider for MemberFields<'_> {
+    type Error = EnsembleError;
+
+    fn fields(&mut self, cell: usize) -> Result<CellFields> {
+        self.eval(cell)
+    }
+}
+
+/// Per-member `f32` fields and arrival field, reused across members. The
+/// field buffers are empty until [`MemberBuffers::fill_fields`].
 #[derive(Debug, Clone, Default)]
 pub struct MemberBuffers {
     head_ros_m_s: Vec<f32>,
@@ -25,22 +80,20 @@ pub struct MemberBuffers {
 }
 
 impl MemberBuffers {
-    /// Buffers sized for `inputs`.
+    /// Buffers with an arrival field sized for `inputs` and empty field
+    /// buffers.
     #[must_use]
     pub fn new(inputs: &Inputs) -> Self {
-        let n = inputs.len();
         Self {
-            head_ros_m_s: vec![0.0; n],
-            eccentricity: vec![0.0; n],
-            max_azimuth_rad: vec![0.0; n],
-            arrival_s: vec![f32::INFINITY; n],
+            head_ros_m_s: Vec::new(),
+            eccentricity: Vec::new(),
+            max_azimuth_rad: Vec::new(),
+            arrival_s: vec![f32::INFINITY; inputs.len()],
         }
     }
 
-    /// Sets each burnable cell's head rate, eccentricity and head azimuth to
-    /// its fuel model's [`firespread_rothermel::DirectionalModel::eval`] at
-    /// the member's wind and the cell's slope, each cast to `f32`, and each
-    /// non-burnable cell's to 0. Resizes the buffers to `inputs`.
+    /// Sets each cell's head rate, eccentricity and head azimuth to
+    /// [`MemberFields::eval`] of the cell. Resizes the buffers to `inputs`.
     ///
     /// # Errors
     /// The Rothermel error of a cell whose evaluation fails.
@@ -49,6 +102,7 @@ impl MemberBuffers {
         self.head_ros_m_s.resize(n, 0.0);
         self.eccentricity.resize(n, 0.0);
         self.max_azimuth_rad.resize(n, 0.0);
+        let provider = MemberFields::new(inputs, *params);
         let cells = self
             .head_ros_m_s
             .iter_mut()
@@ -56,37 +110,27 @@ impl MemberBuffers {
             .zip(self.max_azimuth_rad.iter_mut())
             .enumerate();
         for (i, ((head, ecc), az)) in cells {
-            let m = inputs.model_of_cell[i];
-            if m == NON_BURNABLE {
-                (*head, *ecc, *az) = (0.0, 0.0, 0.0);
-                continue;
-            }
-            let out = inputs.models[usize::from(m)].eval(&DirectionalEnvironment {
-                midflame_wind_m_s: params.midflame_wind_m_s,
-                wind_toward_azimuth_rad: params.wind_toward_azimuth_rad,
-                slope_tan: inputs.slope_tan[i],
-                upslope_azimuth_rad: inputs.upslope_azimuth_rad[i],
-            })?;
-            *head = out.head_ros_m_s as f32;
-            *ecc = out.eccentricity as f32;
-            *az = out.max_spread_azimuth_rad as f32;
+            let f = provider.eval(i)?;
+            (*head, *ecc, *az) = (f.head_ros_m_s, f.eccentricity, f.max_azimuth_rad);
         }
         Ok(())
     }
 
     /// Resets the arrival field to `inputs.initial_arrival_s()` and runs one
-    /// spread window `[0, horizon_s]` over the current fields.
+    /// spread window `[0, horizon_s]` over the fields of the last
+    /// [`MemberBuffers::fill_fields`].
     ///
     /// # Errors
-    /// The spread errors of [`Workspace::simulate_window`].
+    /// The spread errors of [`Workspace::simulate_window`], including
+    /// [`firespread_spread::SpreadError::FieldLength`] when the field buffers
+    /// do not hold one value per cell of `inputs`.
     pub fn spread(
         &mut self,
         inputs: &Inputs,
         workspace: &mut Workspace,
         horizon_s: f32,
     ) -> Result<WindowStats> {
-        self.arrival_s.clear();
-        self.arrival_s.extend_from_slice(inputs.initial_arrival_s());
+        self.reset_arrival(inputs);
         let fields = SpreadFields::new(
             inputs.grid(),
             &self.head_ros_m_s,
@@ -95,6 +139,37 @@ impl MemberBuffers {
             inputs.burnable(),
         )?;
         Ok(workspace.simulate_window(&fields, &mut self.arrival_s, 0.0, horizon_s)?)
+    }
+
+    /// Resets the arrival field to `inputs.initial_arrival_s()` and runs one
+    /// spread window `[0, horizon_s]` with each expanded cell's fields taken
+    /// from [`MemberFields`] of `params` when the cell is expanded. Does not
+    /// read or write the field buffers.
+    ///
+    /// # Errors
+    /// The errors of [`Workspace::simulate_window_with`].
+    pub fn spread_lazy(
+        &mut self,
+        inputs: &Inputs,
+        params: &MemberParams,
+        workspace: &mut Workspace,
+        horizon_s: f32,
+    ) -> Result<WindowStats> {
+        self.reset_arrival(inputs);
+        let mut provider = MemberFields::new(inputs, *params);
+        workspace.simulate_window_with(
+            inputs.grid(),
+            inputs.burnable(),
+            &mut provider,
+            &mut self.arrival_s,
+            0.0,
+            horizon_s,
+        )
+    }
+
+    fn reset_arrival(&mut self, inputs: &Inputs) {
+        self.arrival_s.clear();
+        self.arrival_s.extend_from_slice(inputs.initial_arrival_s());
     }
 
     /// Head rate of spread per cell, m/s.
@@ -115,7 +190,7 @@ impl MemberBuffers {
         &self.max_azimuth_rad
     }
 
-    /// Arrival time per cell after the last [`MemberBuffers::spread`], s;
+    /// Arrival time per cell after the last spread window, s;
     /// `f32::INFINITY` is unburned.
     #[must_use]
     pub fn arrival_s(&self) -> &[f32] {
@@ -123,12 +198,11 @@ impl MemberBuffers {
     }
 }
 
-/// Runs one member: [`MemberBuffers::fill_fields`] then
-/// [`MemberBuffers::spread`] to `horizon_s`. The arrival field is
-/// [`MemberBuffers::arrival_s`] afterwards.
+/// Runs one member: [`MemberBuffers::spread_lazy`] to `horizon_s`. The
+/// arrival field is [`MemberBuffers::arrival_s`] afterwards.
 ///
 /// # Errors
-/// The errors of the two steps.
+/// The errors of [`MemberBuffers::spread_lazy`].
 pub fn run_member(
     inputs: &Inputs,
     params: &MemberParams,
@@ -136,6 +210,5 @@ pub fn run_member(
     buffers: &mut MemberBuffers,
     horizon_s: f32,
 ) -> Result<WindowStats> {
-    buffers.fill_fields(inputs, params)?;
-    buffers.spread(inputs, workspace, horizon_s)
+    buffers.spread_lazy(inputs, params, workspace, horizon_s)
 }

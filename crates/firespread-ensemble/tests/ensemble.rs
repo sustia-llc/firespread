@@ -4,12 +4,13 @@ use std::collections::BTreeSet;
 use std::f32::consts::PI;
 
 use firespread_ensemble::{
-    BURNABLE_FBFM40, Counts, EnsembleError, Fbfm40, Inputs, Layers, MemberBuffers, MemberParams,
-    Perturbation, classify_fbfm40, run_ensemble,
+    BURNABLE_FBFM40, Counts, EnsembleError, Fbfm40, Inputs, Layers, MemberBuffers, MemberFields,
+    MemberParams, Perturbation, classify_fbfm40, run_ensemble, run_member,
 };
 use firespread_fuel::{Moistures, by_code, scott_burgan_40};
 use firespread_grid::GridHeader;
 use firespread_rothermel::WindLimit;
+use firespread_spread::Workspace;
 
 const MOIST: Moistures = Moistures {
     dead_1h: 0.03,
@@ -204,6 +205,66 @@ fn fbfm40_map_covers_the_40_burnable_models() {
     }
     for code in [0, 90, 100, 110, 120, 125, 150, 166, 190, 205, 255] {
         assert_eq!(classify_fbfm40(code), None, "{code}");
+    }
+}
+
+#[test]
+fn lazy_member_matches_filled_fields_bit_for_bit() {
+    let inputs = synthetic();
+    let p = perturbation();
+    let horizon = HORIZONS_S[2];
+    let mut ws = Workspace::new();
+    let mut eager = MemberBuffers::new(&inputs);
+    let mut lazy = MemberBuffers::new(&inputs);
+    let mut burned = BTreeSet::new();
+    for member in 0..MEMBERS {
+        let params = p.draw(SEED, member).unwrap();
+        eager.fill_fields(&inputs, &params).unwrap();
+        let eager_stats = eager.spread(&inputs, &mut ws, horizon).unwrap();
+        let lazy_stats = run_member(&inputs, &params, &mut ws, &mut lazy, horizon).unwrap();
+        let (a, b) = (eager.arrival_s(), lazy.arrival_s());
+        let differ: Vec<usize> = (0..a.len())
+            .filter(|&i| a[i].to_bits() != b[i].to_bits())
+            .collect();
+        assert!(
+            differ.is_empty(),
+            "member {member}: {} cells differ, first {:?}: eager {} lazy {}",
+            differ.len(),
+            differ.first(),
+            differ.first().map_or(0.0, |&i| a[i]),
+            differ.first().map_or(0.0, |&i| b[i])
+        );
+        assert_eq!(eager_stats, lazy_stats, "member {member}");
+        burned.insert(lazy_stats.burned);
+    }
+    assert!(
+        burned.len() > 1 && burned.iter().all(|&b| b > 100),
+        "burned cells per member {burned:?}"
+    );
+}
+
+#[test]
+fn member_fields_eval_matches_fill_fields() {
+    let inputs = synthetic();
+    let params = perturbation().draw(SEED, 3).unwrap();
+    let mut buffers = MemberBuffers::new(&inputs);
+    buffers.fill_fields(&inputs, &params).unwrap();
+    let provider = MemberFields::new(&inputs, params);
+    for cell in 0..inputs.len() {
+        let f = provider.eval(cell).unwrap();
+        assert_eq!(
+            (
+                f.head_ros_m_s.to_bits(),
+                f.eccentricity.to_bits(),
+                f.max_azimuth_rad.to_bits()
+            ),
+            (
+                buffers.head_ros_m_s()[cell].to_bits(),
+                buffers.eccentricity()[cell].to_bits(),
+                buffers.max_azimuth_rad()[cell].to_bits()
+            ),
+            "cell {cell}: eval {f:?}"
+        );
     }
 }
 
