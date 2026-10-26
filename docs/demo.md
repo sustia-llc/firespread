@@ -49,6 +49,11 @@ target/release/firespread score --run data/runs/demo/w3-seed7-m200 --data data
 On the 12-thread development machine, the ensembles took about 13 s for w1,
 49 s for w2 and 222 s for w3. Only w1 is fast enough to run live.
 
+On the development machine, `data/runs/s4-calib/` already holds the three
+runs, made with the same commands and configuration files, and scored. Their
+scores are the ones in the README. To use them, put `data/runs/s4-calib` in
+place of `data/runs/demo` in the server commands below.
+
 ## 3. Start the page
 
 Start one server per window, each on its own port:
@@ -99,8 +104,9 @@ The box is the run grid from `data/extent.json`. The extract is about 3.4 MB.
    green hits, blue misses and magenta false alarms. The hour slider is off
    while the confusion map shows. Select precision in the metric menu, and
    the misses fade, because precision does not count them. Select recall,
-   and the false alarms fade. Select burn probability to go back. Runs scored before this layer existed have no confusion file.
-   To add it, run `firespread score` on the run again.
+   and the false alarms fade. Select burn probability to go back. Runs scored
+   before this layer existed have no confusion file. To add it, run
+   `firespread score` on the run again.
 4. Change the scorecard metric: Jaccard, Dice, precision, recall, Brier, mean
    boundary distance, Hausdorff distance, and buffered precision, recall and
    Dice. The chart compares firespread with persistence and uniform growth.
@@ -211,25 +217,25 @@ Night dead fuel moisture in w3, with road codes 1 to 4:
 ### Tests
 
 ```
-cargo nextest run --workspace
+cargo nextest run --workspace --features firespread/serve
 ```
 
 The suite checks the spread model against FireBench and pyretechnics
 reference values. It also checks that the same seed gives byte-identical
-scorecards.
+scorecards. The README, "Tests", gives the Python test commands.
 
 ### The FireBench bundle
 
 The case is packaged in the FireBench standard format, so another model can
 be scored on the same perimeters. The README, "FireBench bundle", gives the
-commands. Show that the three files pass FireBench's validators, and that
-FireBench's polygon Jaccard agrees with the scorecard within 0.0003.
+commands. Show that the four files pass FireBench's validators, and that
+FireBench's polygon Jaccard agrees with the scorecard within 0.0003 for all
+three entrants.
 
 ## 6. Not built yet
 
 These items are on the roadmap and are not in the demo:
 
-- The uniform growth baseline in the FireBench bundle.
 - Crown fire.
 - Lean proofs (Phase 5a, after the hackathon). The first proofs cover the
   metrics: Jaccard and Dice lie in [0, 1], and Dice equals 2J / (1 + J). Later

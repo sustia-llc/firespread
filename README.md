@@ -87,7 +87,7 @@ Each member draws its own random changes from a seeded generator:
 | Input | Change | Default |
 |---|---|---|
 | Ignition | The start perimeter moves by a random offset inside a disc. | Radius 375 m |
-| Wind speed | Multiplied by a normal factor with mean 1. | Standard deviation 0.2 |
+| Wind speed | Multiplied by a normal factor with mean 1. | Standard deviation 0.2. Both files in `config/` set 0.4, calibrated on w1. |
 | Wind direction | A normal offset with mean 0. | Standard deviation 15° |
 | 1-h and 10-h dead fuel moisture | Multiplied by exp(N(0, sd)). | sd 0.1 |
 
@@ -167,12 +167,13 @@ highest buffered Dice of the three entrants.
 | `crates/firespread-rothermel` | The Rothermel surface spread model and the fire ellipse. |
 | `crates/firespread-spread` | Minimum travel time spread over a grid, with a 32-neighbor stencil. |
 | `crates/firespread-ensemble` | Hourly inputs, wind adjustment, dead fuel moisture, perturbations and the parallel ensemble. |
-| `crates/firespread-metrics` | Jaccard, Dice, precision, recall, Brier and the two baselines. |
+| `crates/firespread-metrics` | Jaccard, Dice, precision, recall, Brier, the boundary distance and buffered metrics, and the two baselines. |
 | `crates/firespread-grid` | GeoTIFF read and write, and the run manifest with its JSON Schema. |
 | `crates/firespread-agents` | The runtime that loads the inputs and runs the ensemble as tokio tasks. |
 | `crates/firespread` | The `firespread` command and the `serve` example. |
 | `python/firespread_prep` | Data download and alignment scripts. See its README. |
 | `python/oracle` | Scripts that write reference values from FireBench and pyretechnics for the Rust tests. |
+| `python/firebench_case` | The FireBench bundle of the case, its check against the scorecards, and the Anderson 2015 comparison. |
 | `ui/` | The static web page. |
 | `config/` | Run configurations. |
 | `docs/` | The demo guide, notes on differences against the reference models, and the diagrams of this file. |
@@ -180,7 +181,8 @@ highest buffered Dice of the three entrants.
 ## Requirements
 
 - Rust 1.99.1. The file `rust-toolchain.toml` selects it.
-- Python 3.12 or later, for the data preparation only.
+- Python 3.12 or later, for the data preparation and the FireBench bundle.
+  The bundle also needs FireBench 0.10.0, `h5py` and `hdf5plugin`.
 - `cargo-nextest`, to run the test suite as shown below.
 
 ## Prepare the data
@@ -239,8 +241,10 @@ The data is not in git. All data goes in `data/`, which git ignores. Set
    target/release/firespread score --run data/runs/w1-seed7-m200 --data data
    ```
 
-   This adds `scorecard.json`, `area_by_hour.json`, `confusion_h12.tif` and
-   `observed.geojson`, and prints the scorecard. The confusion file has one
+   This adds `scorecard.json`, `area_by_hour.json`, `confusion_h12.tif`,
+   `uniform_growth_h12.tif` and `observed.geojson`, and prints the scorecard.
+   The uniform growth file is the baseline mask that the scorecard scores, 1
+   for burned and 0 for not burned. The confusion file has one
    code per cell at the scored hour: 0 none, 1 hit, 2 miss, 3 false alarm. A
    hit is a cell that the forecast (burn probability 0.5 or more) and FEDS
    both burned. A miss burned in FEDS only, and a false alarm burned in the
@@ -334,7 +338,7 @@ PYTHONPATH=python python -m firebench_case.check \
   --bundle data/firebench/hermits_peak --runs data/runs/s4-calib --data data
 ```
 
-The bundle holds three HDF5 files, and each polygon entry points to a KML file
+The bundle holds four HDF5 files, and each polygon entry points to a KML file
 in the same folder:
 
 | File | Polygons | Grids in `spatial_2d` |
@@ -342,20 +346,26 @@ in the same folder:
 | `observations.h5` | FEDS perimeters at the start and end of w1, w2 and w3 | FEDS end masks |
 | `firespread.h5` | Forecast area, burn probability 0.5 or more, at each window end | Burn probability at each forecast hour |
 | `persistence.h5` | Persistence baseline at each window end | none |
+| `uniform_growth.h5` | Uniform growth baseline at each window end, from `uniform_growth_h<N>.tif` | none |
 
-The uniform growth baseline is not in the bundle. Each file passes FireBench's
-`validate_h5_std`, `validate_h5_referenced_files` and `validate_h5_requirement`.
-The `check` module prints FireBench's polygon Jaccard next to the raster
-Jaccard of each scorecard. On 2026-10-26 the two differed by 0.0003 at most:
+If a run has no `uniform_growth_h<N>.tif`, the module skips
+`uniform_growth.h5` and names the run to score again. Each file passes
+FireBench's `validate_h5_std`, `validate_h5_referenced_files` and
+`validate_h5_requirement`. The `check` module prints FireBench's polygon
+Jaccard next to the raster Jaccard of each scorecard. On 2026-10-26 the two
+differed by 0.0003 at most:
 
 | Window | Entrant | Polygon Jaccard | Raster Jaccard |
 |---|---|---|---|
 | w1 | firespread | 0.4085 | 0.4084 |
 | w1 | persistence | 0.4155 | 0.4155 |
+| w1 | uniform growth | 0.3996 | 0.3996 |
 | w2 | firespread | 0.7351 | 0.7349 |
 | w2 | persistence | 0.8209 | 0.8209 |
+| w2 | uniform growth | 0.8233 | 0.8233 |
 | w3 | firespread | 0.6792 | 0.6789 |
 | w3 | persistence | 0.8941 | 0.8941 |
+| w3 | uniform growth | 0.8508 | 0.8508 |
 
 ## Tests
 
@@ -363,9 +373,11 @@ Jaccard of each scorecard. On 2026-10-26 the two differed by 0.0003 at most:
 cargo nextest run --workspace
 cargo nextest run --workspace --features firespread/serve
 cargo clippy --workspace --all-targets -- -D warnings
+python -m unittest discover -s python/firespread_prep/tests
+python -m unittest discover -s python/firebench_case/tests -t python
 ```
 
-The Rothermel tests compare the engine with reference values from FireBench
+Run the two Python commands from the `firespread` venv. The Rothermel tests compare the engine with reference values from FireBench
 and pyretechnics. The reference values are stored as fixtures, so the tests do
 not need Python. `docs/oracle-differences.md` lists the known differences.
 

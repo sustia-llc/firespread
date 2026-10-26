@@ -40,6 +40,8 @@ pub const CONFUSION_MISS: u8 = 2;
 pub const CONFUSION_FALSE_ALARM: u8 = 3;
 /// GDAL_NODATA of `confusion_h<N>.tif`; no cell carries it.
 pub const CONFUSION_NODATA: f32 = 255.0;
+/// GDAL_NODATA of `uniform_growth_h<N>.tif`; no cell carries it.
+pub const UNIFORM_GROWTH_NODATA: f32 = 255.0;
 
 const ENTRANTS: [&str; 3] = ["firespread", "persistence", "uniform_growth"];
 
@@ -299,8 +301,9 @@ fn probability_of(mask: &Mask) -> Result<ProbabilityGrid> {
 }
 
 /// Scores the run in `run_dir` against `obs` and writes `scorecard.json`,
-/// `area_by_hour.json`, `confusion_h<N>.tif` and, when `obs.observed_geojson`
-/// is set, a copy of it as `observed.geojson` into `run_dir`.
+/// `area_by_hour.json`, `confusion_h<N>.tif`, `uniform_growth_h<N>.tif` and,
+/// when `obs.observed_geojson` is set, a copy of it as `observed.geojson` into
+/// `run_dir`.
 ///
 /// The scored horizon is the target label minus the start label, which must
 /// be one of the manifest's horizons. Entrants at that horizon, against the
@@ -318,6 +321,9 @@ fn probability_of(mask: &Mask) -> Result<ProbabilityGrid> {
 /// forecast cells. `confusion_h<N>.tif` is a `u8` GeoTIFF on the run's grid
 /// with GDAL_NODATA [`CONFUSION_NODATA`], holding [`confusion_codes`] of the
 /// `firespread` forecast mask against the FEDS target mask.
+/// `uniform_growth_h<N>.tif` is a `u8` GeoTIFF on the run's grid with
+/// GDAL_NODATA [`UNIFORM_GROWTH_NODATA`], holding the scored
+/// `uniform_growth` mask: 1 burned, 0 not burned.
 pub fn score_run(run_dir: &Path, obs: &Observations, opts: &ScoreOptions) -> Result<ScoreOutputs> {
     let manifest = Manifest::read(run_dir.join("manifest.json"))?;
     let header = manifest.grid;
@@ -532,6 +538,17 @@ pub fn score_run(run_dir: &Path, obs: &Observations, opts: &ScoreOptions) -> Res
     write_cog_u8(&confusion_path, &confusion)
         .with_context(|| format!("writing {}", confusion_path.display()))?;
     files.push(confusion_path);
+    let grown_path = run_dir.join(format!("uniform_growth_h{horizon}.tif"));
+    let grown_grid = MaskGrid::new(
+        GridHeader {
+            nodata: UNIFORM_GROWTH_NODATA,
+            ..header
+        },
+        grown.cells().iter().map(|&c| u8::from(c)).collect(),
+    )?;
+    write_cog_u8(&grown_path, &grown_grid)
+        .with_context(|| format!("writing {}", grown_path.display()))?;
+    files.push(grown_path);
     if let Some(src) = &obs.observed_geojson {
         let dst = run_dir.join("observed.geojson");
         std::fs::copy(src, &dst)

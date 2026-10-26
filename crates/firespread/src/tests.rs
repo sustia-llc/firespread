@@ -13,7 +13,7 @@ use firespread_grid::{
     ForecastWindow, Grid, GridHeader, MANIFEST_VERSION, Manifest, WindLimitPolicy, read_geotiff_u8,
     write_cog,
 };
-use firespread_metrics::Mask;
+use firespread_metrics::{Mask, uniform_growth};
 use serde_json::Value;
 
 use crate::ensemble::{
@@ -363,6 +363,55 @@ fn score_run_writes_the_confusion_map() {
     );
     // Forecast p >= 0.5: {1, 2, 4}; target {1, 2, 3}.
     assert_eq!(grid.data, [0, 1, 1, 2, 3, 0], "confusion cells");
+}
+
+#[test]
+fn score_run_writes_the_uniform_growth_mask() {
+    let dir = scratch("uniform-growth");
+    hand_run(&dir);
+    let obs = hand_observations();
+    let opts = ScoreOptions {
+        uniform_rate_m_per_h: Some(5.0),
+        brier_radius_m: 60.0,
+        buffer_m: DEFAULT_BUFFER_M,
+    };
+    let out = score_run(&dir, &obs, &opts).unwrap();
+    let path = dir.join("uniform_growth_h12.tif");
+    assert!(
+        out.files.contains(&path),
+        "{} not among the written files {:?}",
+        path.display(),
+        out.files
+    );
+    let grid = read_geotiff_u8(&path).unwrap();
+    let want_header = GridHeader {
+        nodata: 255.0,
+        ..header(6, 1)
+    };
+    assert!(
+        grid.header.same_grid(&want_header),
+        "header: got {:?}, expected {want_header:?}",
+        grid.header
+    );
+    assert_eq!(
+        grid.header.nodata.to_bits(),
+        255.0_f32.to_bits(),
+        "nodata: got {}",
+        grid.header.nodata
+    );
+    let want: Vec<u8> = uniform_growth(&obs.start, DX, 5.0, 12.0)
+        .unwrap()
+        .cells()
+        .iter()
+        .map(|&c| u8::from(c))
+        .collect();
+    // 5 m/h for 12 h = 60 m from cell 2: {0, 1, 2, 3, 4}.
+    assert_eq!(want, [1, 1, 1, 1, 1, 0], "uniform_growth of the start mask");
+    assert_eq!(
+        grid.data, want,
+        "uniform_growth_h12.tif cells: got {:?}, expected {want:?}",
+        grid.data
+    );
 }
 
 #[test]

@@ -11,6 +11,9 @@
   and every ``burn_probability_h<N>.tif`` of every run in ``/spatial_2d``.
 - ``persistence.h5``: one polygon entry per window at its target label, from the FEDS mask
   at the start label.
+- ``uniform_growth.h5``: one polygon entry per window at its target label, from the run's
+  ``uniform_growth_h<N>.tif`` written by ``firespread score``. When a run lacks that file,
+  ``uniform_growth.h5`` is not written and one line naming the runs to re-score is printed.
 - one KML file per polygon entry, in ``out`` next to the ``.h5`` files.
 
 Masks are the cells equal to 1. A polygon is ``firebench.tools.array_to_geopolygons`` at
@@ -56,6 +59,7 @@ COMPRESSION_LVL = 3
 OBSERVATIONS = "observations"
 FIRESPREAD = "firespread"
 PERSISTENCE = "persistence"
+UNIFORM_GROWTH = "uniform_growth"
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,10 @@ class Run:
     @property
     def target_cog(self) -> Path:
         return self.run_dir / self.outputs[f"burn_probability_h{self.horizon_h}"]
+
+    @property
+    def uniform_growth_tif(self) -> Path:
+        return self.run_dir / f"{UNIFORM_GROWTH}_h{self.horizon_h}.tif"
 
 
 def utc_label(label: str) -> datetime:
@@ -299,6 +307,25 @@ def build(runs: Path, data: Path, out: Path, authors: str = "firespread", overwr
     finally:
         h5.close()
     result[PERSISTENCE] = {"path": path, "entries": entries}
+
+    missing = [run.run_id for run in run_list if not run.uniform_growth_tif.is_file()]
+    if missing:
+        print(f"{UNIFORM_GROWTH}.h5 skipped: no {UNIFORM_GROWTH}_h<N>.tif in run(s) {', '.join(missing)}; re-score them")
+    else:
+        path = out / f"{UNIFORM_GROWTH}.h5"
+        h5 = new_std_file(str(path), authors, overwrite=overwrite)
+        try:
+            h5.attrs["description"] = (
+                f"uniform growth baseline on the {CASE} windows: the scorecard's uniform_growth mask"
+            )
+            entries = []
+            for run in run_list:
+                field, transform = mask_field(run.uniform_growth_tif, run)
+                write_polygon_entry(h5, out, UNIFORM_GROWTH, run.target, field, transform, run)
+                entries.append(entry_name(run.target))
+        finally:
+            h5.close()
+        result[UNIFORM_GROWTH] = {"path": path, "entries": entries}
 
     for info in result.values():
         info.update(validate(info["path"], info["entries"]))

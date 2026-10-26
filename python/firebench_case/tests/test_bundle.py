@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -25,6 +27,7 @@ EPSG = 5070
 START = slice(8, 12)
 TARGET = slice(5, 15)
 FORECAST = slice(6, 13)
+GROWN = slice(7, 14)
 
 
 def write_tif(path: Path, array: np.ndarray, nodata: float) -> None:
@@ -64,6 +67,7 @@ def make_case(root: Path) -> tuple[Path, Path]:
     p[0, 0] = -9999.0
     write_tif(run / "burn_probability_h12.tif", p, -9999.0)
     write_tif(run / "burn_probability_h6.tif", block(START, np.float32, 0.9, 0.0), -9999.0)
+    write_tif(run / "uniform_growth_h12.tif", block(GROWN, np.uint8, 1, 0), 255)
     (run / "manifest.json").write_text(
         json.dumps(
             {
@@ -112,7 +116,12 @@ class BundleTest(unittest.TestCase):
     def test_three_validators_pass_on_every_file(self) -> None:
         start = "HermitsPeak_2022-04-22T12:00+00:00"
         target = "HermitsPeak_2022-04-23T00:00+00:00"
-        expected = {"observations": [start, target], "firespread": [target], "persistence": [target]}
+        expected = {
+            "observations": [start, target],
+            "firespread": [target],
+            "persistence": [target],
+            "uniform_growth": [target],
+        }
         self.assertEqual({k: v["entries"] for k, v in self.result.items()}, expected)
         for name, info in self.result.items():
             self.assertIsNone(info["validate_h5_std"], name)
@@ -127,6 +136,7 @@ class BundleTest(unittest.TestCase):
             ("observations_HermitsPeak_20220422T1200.kml", START),
             ("firespread_HermitsPeak_20220423T0000.kml", FORECAST),
             ("persistence_HermitsPeak_20220423T0000.kml", START),
+            ("uniform_growth_HermitsPeak_20220423T0000.kml", GROWN),
         ]
         for name, s in cases:
             area = kml_area_m2(self.out / name)
@@ -153,6 +163,19 @@ class BundleTest(unittest.TestCase):
             ok, issue = validate_h5_referenced_files(h5)
         self.assertFalse(ok, f"validator passed a changed KML: {issue}")
         self.assertIn("SHA-256 mismatch", issue)
+
+    def test_run_without_uniform_growth_tif_skips_its_file(self) -> None:
+        (self.runs / "w1-seed7-m2" / "uniform_growth_h12.tif").unlink()
+        out = Path(self.tmp.name) / "out2"
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result = bundle.build(self.runs, self.data, out)
+        self.assertNotIn("uniform_growth", result)
+        self.assertFalse((out / "uniform_growth.h5").exists())
+        lines = stdout.getvalue().splitlines()
+        self.assertEqual(len(lines), 1, lines)
+        self.assertIn("w1-seed7-m2", lines[0])
+        self.assertIn("re-score", lines[0])
 
 
 if __name__ == "__main__":

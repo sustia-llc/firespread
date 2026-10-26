@@ -16,9 +16,17 @@ import h5py
 
 from firebench.benchmarks.c001_caldor import jaccard_from_list
 
-from firebench_case.bundle import FIRESPREAD, GEOPOLYGONS, OBSERVATIONS, PERSISTENCE, entry_name, load_runs
+from firebench_case.bundle import (
+    FIRESPREAD,
+    GEOPOLYGONS,
+    OBSERVATIONS,
+    PERSISTENCE,
+    UNIFORM_GROWTH,
+    entry_name,
+    load_runs,
+)
 
-ENTRANTS = [FIRESPREAD, PERSISTENCE, "uniform_growth"]
+ENTRANTS = [FIRESPREAD, PERSISTENCE, UNIFORM_GROWTH]
 PROJECTION = "EPSG:5070"
 
 
