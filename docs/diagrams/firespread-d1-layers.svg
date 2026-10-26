@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="firespread-d1-layers-title firespread-d1-layers-desc" id="firespread-d1-layers-root">
+        <title id="firespread-d1-layers-title">Six layers, one forecast</title>
+        <desc id="firespread-d1-layers-desc">Exploded view of the firespread forecast for Hermits Peak 2022: terrain, fuel, canopy, weather and the fire start, each with its source and resolution, stacked under the burn probability by hour they produce on one shared 30 m grid.</desc>
+  <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #firespread-d1-layers-root { --color-paper:  #eef0eb;
+      --color-ink:    #1f2924;
+      --color-muted:  #4d5a52;
+      --color-accent: #a8380b;
+      --font-sans:    'Geist', system-ui, sans-serif;
+      --font-serif:   'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:    'Geist Mono', ui-monospace, monospace; }
+      #firespread-d1-layers-root { font-family: var(--font-sans); color: var(--color-ink); }
+      #firespread-d1-layers-root .diagram-container { width: 100%; overflow-x: auto; }
+      @media print {
+#firespread-d1-layers-root .diagram-container { overflow-x: visible; }
+}
+      @media (prefers-color-scheme: dark) {
+#firespread-d1-layers-root :not([data-theme="light"]) { --color-paper:  #1c2420;
+        --color-ink:    #e8ece6;
+        --color-muted:  #b3bdb4;
+        --color-accent: #f0874d; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .bg { fill: #1c2420; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .fb { fill: #253029; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .ft { fill: rgba(232,236,230,0.10); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .fl { fill: none; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .fr { fill: rgba(28,36,32,0.45); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .ft-a { fill: rgba(240,135,77,0.18); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .fl-a { fill: none; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .fr-a { fill: rgba(28,36,32,0.45); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .sil { stroke: #e8ece6; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .sil-a { stroke: #f0874d; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .edge { stroke: rgba(232,236,230,0.45); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .edge-a { stroke: rgba(240,135,77,0.70); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .det { stroke: rgba(232,236,230,0.55); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .det-fill { fill: rgba(232,236,230,0.07); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .det-crown { fill: rgba(232,236,230,0.10); stroke: rgba(232,236,230,0.55); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .det-start { fill: rgba(232,236,230,0.18); stroke: #e8ece6; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .pb1 { fill: rgba(240,135,77,0.14); stroke: rgba(240,135,77,0.70); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .pb2 { fill: rgba(240,135,77,0.26); stroke: rgba(240,135,77,0.70); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .pb3 { fill: rgba(240,135,77,0.42); stroke: rgba(240,135,77,0.70); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .trace { stroke: rgba(232,236,230,0.30); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .leader { stroke: rgba(232,236,230,0.40); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .leader-a { stroke: rgba(240,135,77,0.60); }
+      #firespread-d1-layers-root :not([data-theme="light"]) .dot, #firespread-d1-layers-root :not([data-theme="light"]) .name { fill: #e8ece6; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .dot-a, #firespread-d1-layers-root :not([data-theme="light"]) .sub-a { fill: #f0874d; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .sub, #firespread-d1-layers-root :not([data-theme="light"]) .foot { fill: #b3bdb4; }
+      #firespread-d1-layers-root :not([data-theme="light"]) .rule { stroke: rgba(232,236,230,0.13); }
+}</style>
+  </defs>
+        <rect width="100%" height="100%" fill="#eef0eb" class="bg"/>
+        <g data-exploded="" data-origin="416 488" data-gap="80">
+        <line data-role="trace" x1="256" y1="560" x2="256" y2="128" stroke="rgba(31,41,36,0.3)" stroke-width="0.8" stroke-dasharray="4,3" class="trace"/><line data-role="trace" x1="576" y1="560" x2="576" y2="128" stroke="rgba(31,41,36,0.3)" stroke-width="0.8" stroke-dasharray="4,3" class="trace"/>
+<g data-part="terrain" data-name="Terrain" data-rect="0 0 160 160 0" data-z="0" data-t="8" data-level="0">
+<path data-role="silhouette" d="M 256 560 L 416 480 L 576 560 L 576 568 L 416 648 L 256 568 Z" fill="#ffffff" class="fb"/>
+<path d="M 256 560 L 416 480 L 576 560 L 416 640 Z" fill="none" class="ft"/>
+<path d="M 256 560 L 416 640 L 416 648 L 256 568 Z" fill="rgba(31,41,36,0.07)" class="fl"/>
+<path d="M 416 640 L 576 560 L 576 568 L 416 648 Z" fill="rgba(31,41,36,0.15)" class="fr"/>
+<ellipse cx="408" cy="548" rx="28.28" ry="14.14" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<ellipse cx="408" cy="548" rx="50.91" ry="25.46" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<ellipse cx="408" cy="548" rx="73.54" ry="36.77" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<ellipse cx="420" cy="604" rx="14.14" ry="7.07" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<ellipse cx="420" cy="604" rx="28.28" ry="14.14" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 256 560 L 416 640 L 576 560 M 416 640 L 416 648" fill="none" stroke="rgba(31,41,36,0.55)" stroke-width="0.8" class="edge"/>
+<path d="M 256 560 L 416 480 L 576 560 L 576 568 L 416 648 L 256 568 Z" fill="none" stroke="#1f2924" stroke-width="1.2" stroke-linejoin="round" class="sil"/>
+<g data-role="label">
+<line data-role="leader" x1="582" y1="564" x2="628" y2="564" stroke="rgba(31,41,36,0.4)" stroke-width="0.8" class="leader"/>
+<circle cx="576" cy="564" r="2" fill="#1f2924" class="dot"/>
+<text data-role="name" x="640" y="563" fill="#1f2924" font-size="16" font-weight="600" font-family="'Geist', system-ui, sans-serif" class="name">Terrain</text>
+<text x="640" y="579" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">LANDFIRE elevation, slope, aspect</text>
+<text x="640" y="592" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">30 m</text>
+</g></g>
+<g data-part="fuel" data-name="Fuel" data-rect="0 0 160 160 0" data-z="88" data-t="8" data-level="1">
+<path data-role="silhouette" d="M 256 472 L 416 392 L 576 472 L 576 480 L 416 560 L 256 480 Z" fill="#ffffff" class="fb"/>
+<path d="M 256 472 L 416 392 L 576 472 L 416 552 Z" fill="none" class="ft"/>
+<path d="M 256 472 L 416 552 L 416 560 L 256 480 Z" fill="rgba(31,41,36,0.07)" class="fl"/>
+<path d="M 416 552 L 576 472 L 576 480 L 416 560 Z" fill="rgba(31,41,36,0.15)" class="fr"/>
+<path d="M 416 432 L 456 452 L 416 472 L 376 452 Z" fill="rgba(31,41,36,0.07)" class="det-fill"/>
+<path d="M 416 472 L 456 492 L 416 512 L 376 492 Z" fill="rgba(31,41,36,0.07)" class="det-fill"/>
+<path d="M 336 472 L 376 492 L 336 512 L 296 492 Z" fill="rgba(31,41,36,0.07)" class="det-fill"/>
+<path d="M 496 472 L 536 492 L 496 512 L 456 492 Z" fill="rgba(31,41,36,0.07)" class="det-fill"/>
+<path d="M 376 492 L 416 512 L 376 532 L 336 512 Z" fill="rgba(31,41,36,0.07)" class="det-fill"/>
+<path d="M 452 414 L 300 490" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 380 414 L 532 490" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 492 434 L 340 510" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 340 434 L 492 510" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 532 454 L 380 530" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 300 454 L 452 530" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 256 472 L 416 552 L 576 472 M 416 552 L 416 560" fill="none" stroke="rgba(31,41,36,0.55)" stroke-width="0.8" class="edge"/>
+<path d="M 256 472 L 416 392 L 576 472 L 576 480 L 416 560 L 256 480 Z" fill="none" stroke="#1f2924" stroke-width="1.2" stroke-linejoin="round" class="sil"/>
+<g data-role="label">
+<line data-role="leader" x1="582" y1="476" x2="628" y2="476" stroke="rgba(31,41,36,0.4)" stroke-width="0.8" class="leader"/>
+<circle cx="576" cy="476" r="2" fill="#1f2924" class="dot"/>
+<text data-role="name" x="640" y="475" fill="#1f2924" font-size="16" font-weight="600" font-family="'Geist', system-ui, sans-serif" class="name">Fuel</text>
+<text x="640" y="491" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">LANDFIRE FBFM40 · Scott and Burgan 40</text>
+<text x="640" y="504" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">30 m · OSM roads, NHD water</text>
+</g></g>
+<g data-part="canopy" data-name="Canopy" data-rect="0 0 160 160 0" data-z="176" data-t="8" data-level="2">
+<path data-role="silhouette" d="M 256 384 L 416 304 L 576 384 L 576 392 L 416 472 L 256 392 Z" fill="#ffffff" class="fb"/>
+<path d="M 256 384 L 416 304 L 576 384 L 416 464 Z" fill="none" class="ft"/>
+<path d="M 256 384 L 416 464 L 416 472 L 256 392 Z" fill="rgba(31,41,36,0.07)" class="fl"/>
+<path d="M 416 464 L 576 384 L 576 392 L 416 472 Z" fill="rgba(31,41,36,0.15)" class="fr"/>
+<ellipse cx="408" cy="336" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="444" cy="342" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="400" cy="356" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="448" cy="364" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="488" cy="368" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="400" cy="380" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="352" cy="372" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="436" cy="390" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="480" cy="396" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="352" cy="396" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="396" cy="406" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="444" cy="418" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<ellipse cx="396" cy="430" rx="11.31" ry="5.66" fill="rgba(31,41,36,0.1)" stroke="rgba(31,41,36,0.55)" stroke-width="0.6" class="det-crown"/>
+<path d="M 256 384 L 416 464 L 576 384 M 416 464 L 416 472" fill="none" stroke="rgba(31,41,36,0.55)" stroke-width="0.8" class="edge"/>
+<path d="M 256 384 L 416 304 L 576 384 L 576 392 L 416 472 L 256 392 Z" fill="none" stroke="#1f2924" stroke-width="1.2" stroke-linejoin="round" class="sil"/>
+<g data-role="label">
+<line data-role="leader" x1="582" y1="388" x2="628" y2="388" stroke="rgba(31,41,36,0.4)" stroke-width="0.8" class="leader"/>
+<circle cx="576" cy="388" r="2" fill="#1f2924" class="dot"/>
+<text data-role="name" x="640" y="387" fill="#1f2924" font-size="16" font-weight="600" font-family="'Geist', system-ui, sans-serif" class="name">Canopy</text>
+<text x="640" y="403" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">LANDFIRE cover, height, base height</text>
+<text x="640" y="416" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">30 m</text>
+</g></g>
+<g data-part="weather" data-name="Weather" data-rect="0 0 160 160 0" data-z="264" data-t="8" data-level="3">
+<path data-role="silhouette" d="M 256 296 L 416 216 L 576 296 L 576 304 L 416 384 L 256 304 Z" fill="#ffffff" class="fb"/>
+<path d="M 256 296 L 416 216 L 576 296 L 416 376 Z" fill="none" class="ft"/>
+<path d="M 256 296 L 416 376 L 416 384 L 256 304 Z" fill="rgba(31,41,36,0.07)" class="fl"/>
+<path d="M 416 376 L 576 296 L 576 304 L 416 384 Z" fill="rgba(31,41,36,0.15)" class="fr"/>
+<path d="M 400 244 L 512 300" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 508 290 L 512 300 L 492 298" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 356 266 L 468 322" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 464 312 L 468 322 L 448 320" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 312 288 L 424 344" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 420 334 L 424 344 L 404 342" stroke="rgba(31,41,36,0.55)" stroke-width="0.7" fill="none" class="det"/>
+<path d="M 256 296 L 416 376 L 576 296 M 416 376 L 416 384" fill="none" stroke="rgba(31,41,36,0.55)" stroke-width="0.8" class="edge"/>
+<path d="M 256 296 L 416 216 L 576 296 L 576 304 L 416 384 L 256 304 Z" fill="none" stroke="#1f2924" stroke-width="1.2" stroke-linejoin="round" class="sil"/>
+<g data-role="label">
+<line data-role="leader" x1="582" y1="300" x2="628" y2="300" stroke="rgba(31,41,36,0.4)" stroke-width="0.8" class="leader"/>
+<circle cx="576" cy="300" r="2" fill="#1f2924" class="dot"/>
+<text data-role="name" x="640" y="299" fill="#1f2924" font-size="16" font-weight="600" font-family="'Geist', system-ui, sans-serif" class="name">Weather</text>
+<text x="640" y="315" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">HRRR hourly 10 m wind, temperature, humidity, cloud</text>
+<text x="640" y="328" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">aligned to 30 m · gridMET 100-h moisture</text>
+</g></g>
+<g data-part="start" data-name="Fire start" data-rect="0 0 160 160 0" data-z="352" data-t="8" data-level="4">
+<path data-role="silhouette" d="M 256 208 L 416 128 L 576 208 L 576 216 L 416 296 L 256 216 Z" fill="#ffffff" class="fb"/>
+<path d="M 256 208 L 416 128 L 576 208 L 416 288 Z" fill="none" class="ft"/>
+<path d="M 256 208 L 416 288 L 416 296 L 256 216 Z" fill="rgba(31,41,36,0.07)" class="fl"/>
+<path d="M 416 288 L 576 208 L 576 216 L 416 296 Z" fill="rgba(31,41,36,0.15)" class="fr"/>
+<path d="M 438.64 215.32 L 436.11 216.65 L 433.02 217.68 L 429.53 218.33 L 425.84 218.54 L 422.2 218.31 L 418.82 217.67 L 415.92 216.66 L 413.63 215.41 L 412 214 L 411.01 212.55 L 410.57 211.13 L 410.55 209.8 L 410.82 208.58 L 411.28 207.44 L 411.87 206.37 L 412.59 205.34 L 413.49 204.32 L 414.64 203.32 L 416.11 202.37 L 417.94 201.5 L 420.14 200.8 L 422.65 200.31 L 425.39 200.08 L 428.21 200.14 L 431 200.49 L 433.63 201.12 L 436 202 L 438.05 203.08 L 439.75 204.33 L 441.06 205.71 L 441.96 207.21 L 442.42 208.81 L 442.38 210.46 L 441.77 212.14 L 440.53 213.79 Z" fill="rgba(31,41,36,0.18)" stroke="#1f2924" stroke-width="0.8" class="det-start"/>
+<path d="M 256 208 L 416 288 L 576 208 M 416 288 L 416 296" fill="none" stroke="rgba(31,41,36,0.55)" stroke-width="0.8" class="edge"/>
+<path d="M 256 208 L 416 128 L 576 208 L 576 216 L 416 296 L 256 216 Z" fill="none" stroke="#1f2924" stroke-width="1.2" stroke-linejoin="round" class="sil"/>
+<g data-role="label">
+<line data-role="leader" x1="582" y1="212" x2="628" y2="212" stroke="rgba(31,41,36,0.4)" stroke-width="0.8" class="leader"/>
+<circle cx="576" cy="212" r="2" fill="#1f2924" class="dot"/>
+<text data-role="name" x="640" y="211" fill="#1f2924" font-size="16" font-weight="600" font-family="'Geist', system-ui, sans-serif" class="name">Fire start</text>
+<text x="640" y="227" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">FEDS fire 35131 perimeter</text>
+<text x="640" y="240" fill="#4d5a52" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub">2022-04-22 12:00Z</text>
+</g></g>
+<g data-part="prob" data-name="Burn probability" data-rect="0 0 160 160 0" data-z="440" data-t="8" data-level="5" data-focal="">
+<path data-role="silhouette" d="M 256 120 L 416 40 L 576 120 L 576 128 L 416 208 L 256 128 Z" fill="#ffffff" class="fb"/>
+<path d="M 256 120 L 416 40 L 576 120 L 416 200 Z" fill="rgba(168,56,11,0.1)" class="ft-a"/>
+<path d="M 256 120 L 416 200 L 416 208 L 256 128 Z" fill="rgba(168,56,11,0.2)" class="fl-a"/>
+<path d="M 416 200 L 576 120 L 576 128 L 416 208 Z" fill="rgba(168,56,11,0.32)" class="fr-a"/>
+<path d="M 487.44 151.72 L 476.47 157.47 L 463.1 161.93 L 447.98 164.74 L 431.99 165.69 L 416.18 164.7 L 401.55 161.88 L 388.98 157.55 L 379.05 152.09 L 372 146 L 367.71 139.71 L 365.79 133.57 L 365.7 127.81 L 366.87 122.5 L 368.86 117.59 L 371.42 112.96 L 374.56 108.47 L 378.46 104.06 L 383.44 99.72 L 389.8 95.58 L 397.75 91.85 L 407.27 88.79 L 418.17 86.66 L 430.01 85.66 L 442.26 85.93 L 454.34 87.47 L 465.72 90.21 L 476 94 L 484.89 98.68 L 492.24 104.09 L 497.93 110.1 L 501.85 116.59 L 503.83 123.49 L 503.65 130.67 L 501 137.95 L 495.64 145.08 Z" fill="rgba(168,56,11,0.14)" stroke="rgba(168,56,11,0.7)" stroke-width="0.6" class="pb1"/>
+<path d="M 467.92 141.96 L 460.33 145.94 L 451.07 149.03 L 440.6 150.98 L 429.53 151.63 L 418.59 150.94 L 408.46 149 L 399.76 145.99 L 392.88 142.22 L 388 138 L 385.03 133.64 L 383.7 129.4 L 383.64 125.41 L 384.45 121.73 L 385.83 118.33 L 387.6 115.12 L 389.77 112.02 L 392.47 108.96 L 395.92 105.96 L 400.33 103.1 L 405.83 100.51 L 412.42 98.39 L 419.96 96.92 L 428.16 96.23 L 436.64 96.41 L 445 97.48 L 452.89 99.37 L 460 102 L 466.16 105.24 L 471.24 108.99 L 475.18 113.14 L 477.89 117.64 L 479.27 122.42 L 479.14 127.39 L 477.31 132.43 L 473.6 137.36 Z" fill="rgba(168,56,11,0.26)" stroke="rgba(168,56,11,0.7)" stroke-width="0.6" class="pb2"/>
+<path d="M 450.84 133.42 L 446.2 135.85 L 440.54 137.74 L 434.14 138.93 L 427.38 139.33 L 420.69 138.91 L 414.5 137.72 L 409.19 135.88 L 404.98 133.58 L 402 131 L 400.18 128.34 L 399.37 125.74 L 399.34 123.3 L 399.83 121.06 L 400.67 118.98 L 401.76 117.02 L 403.08 115.12 L 404.73 113.25 L 406.84 111.42 L 409.53 109.67 L 412.89 108.09 L 416.92 106.8 L 421.53 105.89 L 426.54 105.47 L 431.72 105.59 L 436.84 106.24 L 441.65 107.4 L 446 109 L 449.76 110.98 L 452.87 113.27 L 455.28 115.81 L 456.94 118.56 L 457.78 121.48 L 457.7 124.51 L 456.58 127.6 L 454.31 130.61 Z" fill="rgba(168,56,11,0.42)" stroke="rgba(168,56,11,0.7)" stroke-width="0.6" class="pb3"/>
+<path d="M 256 120 L 416 200 L 576 120 M 416 200 L 416 208" fill="none" stroke="rgba(168,56,11,0.7)" stroke-width="0.8" class="edge-a"/>
+<path d="M 256 120 L 416 40 L 576 120 L 576 128 L 416 208 L 256 128 Z" fill="none" stroke="#a8380b" stroke-width="1.2" stroke-linejoin="round" class="sil-a"/>
+<g data-role="label">
+<line data-role="leader" x1="582" y1="124" x2="628" y2="124" stroke="rgba(168,56,11,0.6)" stroke-width="0.8" class="leader-a"/>
+<circle cx="576" cy="124" r="2" fill="#a8380b" class="dot-a"/>
+<text data-role="name" x="640" y="123" fill="#1f2924" font-size="16" font-weight="600" font-family="'Geist', system-ui, sans-serif" class="name">Burn probability</text>
+<text x="640" y="139" fill="#a8380b" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub-a">ensemble forecast, by hour</text>
+<text x="640" y="152" fill="#a8380b" font-size="10" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.08em" class="sub-a">same 30 m grid</text>
+</g></g>
+        </g>
+        <line x1="256" y1="672" x2="1020" y2="672" stroke="rgba(31,41,36,0.13)" stroke-width="0.8" class="rule"/>
+        <text x="256" y="688" fill="#4d5a52" font-size="8" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.18em" class="foot">SHARED GRID</text>
+        <text x="360" y="688" fill="#4d5a52" font-size="9" font-family="'Geist Mono', ui-monospace, monospace" letter-spacing="0.06em" class="foot">2400 × 2400 cells · 30 m · 72 km a side · EPSG:5070</text>
+      </svg>

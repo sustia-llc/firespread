@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="firespread-d4-horizons-title firespread-d4-horizons-desc" id="firespread-d4-horizons-root">
+        <title id="firespread-d4-horizons-title">What the forecast says, and when</title>
+        <desc id="firespread-d4-horizons-desc">Timeline of forecast window w1: the forecast starts from the FEDS fire perimeter labelled 12:00 UTC on 22 April 2022 (06:00 MDT), gives burn odds 1, 3, 6 and 12 hours later, and the 12-hour forecast is scored against the FEDS perimeter labelled 00:00 UTC on 23 April; weather updates hourly from HRRR, and re-forecasting on each new satellite overpass is roadmap.</desc>
+        <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #firespread-d4-horizons-root { --paper:  #eef0eb;
+      --ink:    #1f2924;
+      --muted:  #4d5a52;
+      --soft:   #56635b;
+      --accent: #a8380b;
+      --hair:   rgba(31,41,36,0.30);
+      --rule:   rgba(31,41,36,0.13);
+      --base:   #b9c0b6;
+      --font-sans:  'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:  'Geist Mono', ui-monospace, monospace; }
+      @media (prefers-color-scheme: dark) {
+#firespread-d4-horizons-root :not([data-theme="light"]) { --paper:  #1c2420;
+        --ink:    #e8ece6;
+        --muted:  #b3bdb4;
+        --soft:   #98a59c;
+        --accent: #f0874d;
+        --hair:   rgba(232,236,230,0.30);
+        --rule:   rgba(232,236,230,0.13);
+        --base:   rgba(185,192,182,0.28); }
+}
+      #firespread-d4-horizons-root [data-theme="dark"] { --paper:  #1c2420;
+      --ink:    #e8ece6;
+      --muted:  #b3bdb4;
+      --soft:   #98a59c;
+      --accent: #f0874d;
+      --hair:   rgba(232,236,230,0.30);
+      --rule:   rgba(232,236,230,0.13);
+      --base:   rgba(185,192,182,0.28); }
+      #firespread-d4-horizons-root { font-family: var(--font-sans); color: var(--ink); }
+      #firespread-d4-horizons-root .diagram-container { width: 100%; overflow-x: auto; }
+      #firespread-d4-horizons-root .bg { fill: var(--paper); }
+      #firespread-d4-horizons-root .f-ink { fill: var(--ink); }
+      #firespread-d4-horizons-root .f-muted { fill: var(--muted); }
+      #firespread-d4-horizons-root .f-soft { fill: var(--soft); }
+      #firespread-d4-horizons-root .f-accent { fill: var(--accent); }
+      #firespread-d4-horizons-root .s-hair { stroke: var(--hair); stroke-width: 1; }
+      #firespread-d4-horizons-root .s-base { stroke: var(--base); stroke-width: 1; }
+      #firespread-d4-horizons-root .s-rule { stroke: var(--rule); stroke-width: 0.8; }
+      #firespread-d4-horizons-root .s-soft { stroke: var(--soft); stroke-width: 1; }
+      #firespread-d4-horizons-root .s-accent { stroke: var(--accent); stroke-width: 1; }
+      #firespread-d4-horizons-root .mono { font-family: var(--font-mono); }
+      #firespread-d4-horizons-root .sans { font-family: var(--font-sans); }
+      #firespread-d4-horizons-root .tag { font-size: 8px; letter-spacing: 0.14em; }
+      #firespread-d4-horizons-root .name { font-size: 12px; font-weight: 600; }
+      #firespread-d4-horizons-root .sub { font-size: 9px; }
+      @media print {
+#firespread-d4-horizons-root .diagram-container { overflow-x: visible; }
+}</style></defs>
+
+        <rect class="bg" width="100%" height="100%"/>
+
+        <!-- Time scale: 60 px per hour, 0 h at x=100, 12 h at x=820 -->
+
+        <!-- Forecast track: baseline and end caps -->
+        <text class="mono tag f-muted" x="40" y="44">FORECAST · BURN ODDS BY HOUR</text>
+        <line class="s-base" x1="100" y1="200" x2="820" y2="200"/>
+        <line class="s-hair" x1="100" y1="192" x2="100" y2="208"/>
+        <line class="s-hair" x1="820" y1="192" x2="820" y2="208"/>
+
+        <!-- Start, 0 h (above) -->
+        <line class="s-hair" x1="100" y1="136" x2="100" y2="200"/>
+        <circle class="f-ink" cx="100" cy="200" r="4"/>
+        <text class="mono tag f-muted" x="100" y="80" text-anchor="middle">START · 0 H</text>
+        <text class="sans name f-ink" x="100" y="98" text-anchor="middle">Fire mapped</text>
+        <text class="mono sub f-muted" x="100" y="114" text-anchor="middle">12:00Z · 06:00 MDT</text>
+        <text class="mono sub f-soft" x="100" y="128" text-anchor="middle">FEDS perimeter</text>
+
+        <!-- +1 h (below) -->
+        <line class="s-hair" x1="160" y1="200" x2="160" y2="264"/>
+        <circle class="f-ink" cx="160" cy="200" r="4"/>
+        <text class="mono tag f-muted" x="160" y="280" text-anchor="middle">+1 H</text>
+        <text class="sans name f-ink" x="160" y="298" text-anchor="middle">Burn odds, 1 h</text>
+        <text class="mono sub f-muted" x="160" y="314" text-anchor="middle">13:00Z · 07:00 MDT</text>
+
+        <!-- +3 h (above) -->
+        <line class="s-hair" x1="280" y1="136" x2="280" y2="200"/>
+        <circle class="f-ink" cx="280" cy="200" r="4"/>
+        <text class="mono tag f-muted" x="280" y="80" text-anchor="middle">+3 H</text>
+        <text class="sans name f-ink" x="280" y="98" text-anchor="middle">Burn odds, 3 h</text>
+        <text class="mono sub f-muted" x="280" y="114" text-anchor="middle">15:00Z · 09:00 MDT</text>
+
+        <!-- +6 h (below) -->
+        <line class="s-hair" x1="460" y1="200" x2="460" y2="264"/>
+        <circle class="f-ink" cx="460" cy="200" r="4"/>
+        <text class="mono tag f-muted" x="460" y="280" text-anchor="middle">+6 H</text>
+        <text class="sans name f-ink" x="460" y="298" text-anchor="middle">Burn odds, 6 h</text>
+        <text class="mono sub f-muted" x="460" y="314" text-anchor="middle">18:00Z · 12:00 MDT</text>
+
+        <!-- +12 h (above, accent): meets the FEDS target perimeter -->
+        <line class="s-accent" x1="820" y1="136" x2="820" y2="200"/>
+        <circle class="f-accent" cx="820" cy="200" r="6"/>
+        <text class="mono tag f-accent" x="820" y="80" text-anchor="middle">+12 H · SCORED</text>
+        <text class="sans name f-ink" x="820" y="98" text-anchor="middle">Burn odds, 12 h</text>
+        <text class="mono sub f-muted" x="820" y="114" text-anchor="middle">00:00Z 23 Apr · 18:00 MDT 22 Apr</text>
+        <text class="mono sub f-accent" x="820" y="128" text-anchor="middle">vs FEDS target perimeter</text>
+
+        <!-- Weather track: one HRRR field per spread hour, hours 0 to 11 -->
+        <text class="mono tag f-muted" x="40" y="364">WEATHER · HRRR WIND, UPDATED EACH HOUR</text>
+        <line class="s-rule" x1="100" y1="392" x2="820" y2="392"/>
+        <line class="s-soft" x1="100" y1="380" x2="100" y2="392"/>
+        <line class="s-soft" x1="160" y1="380" x2="160" y2="392"/>
+        <line class="s-soft" x1="220" y1="380" x2="220" y2="392"/>
+        <line class="s-soft" x1="280" y1="380" x2="280" y2="392"/>
+        <line class="s-soft" x1="340" y1="380" x2="340" y2="392"/>
+        <line class="s-soft" x1="400" y1="380" x2="400" y2="392"/>
+        <line class="s-soft" x1="460" y1="380" x2="460" y2="392"/>
+        <line class="s-soft" x1="520" y1="380" x2="520" y2="392"/>
+        <line class="s-soft" x1="580" y1="380" x2="580" y2="392"/>
+        <line class="s-soft" x1="640" y1="380" x2="640" y2="392"/>
+        <line class="s-soft" x1="700" y1="380" x2="700" y2="392"/>
+        <line class="s-soft" x1="760" y1="380" x2="760" y2="392"/>
+        <text class="mono tag f-soft" x="100" y="408" text-anchor="middle">0 H</text>
+        <text class="mono tag f-soft" x="280" y="408" text-anchor="middle">3 H</text>
+        <text class="mono tag f-soft" x="460" y="408" text-anchor="middle">6 H</text>
+        <text class="mono tag f-soft" x="640" y="408" text-anchor="middle">9 H</text>
+        <text class="mono tag f-soft" x="820" y="408" text-anchor="middle">12 H</text>
+
+        <!-- Roadmap track: dashed, no instants drawn -->
+        <text class="mono tag f-muted" x="40" y="448">ROADMAP · NOT BUILT</text>
+        <line class="s-soft" x1="100" y1="464" x2="820" y2="464" stroke-dasharray="5,4"/>
+        <text class="sans name f-ink" x="100" y="488">Re-forecast on each new satellite overpass</text>
+        <text class="mono sub f-soft" x="100" y="504">No overpass times drawn: FEDS labels are 12-hour bins, not overpass instants</text>
+
+        <!-- Legend -->
+        <line class="s-rule" x1="40" y1="548" x2="920" y2="548"/>
+        <text class="mono tag f-muted" x="40" y="564">LEGEND</text>
+        <circle class="f-ink" cx="44" cy="580" r="4"/>
+        <text class="sans f-muted" x="56" y="583" font-size="8.5">Forecast horizon</text>
+        <circle class="f-accent" cx="160" cy="580" r="6"/>
+        <text class="sans f-muted" x="172" y="583" font-size="8.5">Scored against observation</text>
+        <line class="s-soft" x1="320" y1="574" x2="320" y2="586"/>
+        <text class="sans f-muted" x="332" y="583" font-size="8.5">Hourly weather update</text>
+        <line class="s-soft" x1="460" y1="580" x2="496" y2="580" stroke-dasharray="5,4"/>
+        <text class="sans f-muted" x="508" y="583" font-size="8.5">Roadmap</text>
+        <text class="sans f-muted" x="600" y="583" font-size="8.5" font-style="italic">Spacing is proportional to time: 60 px per hour.</text>
+      </svg>

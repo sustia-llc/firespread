@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="firespread-d6-cell-logic-title firespread-d6-cell-logic-desc" id="firespread-d6-cell-logic-root">
+        <title id="firespread-d6-cell-logic-title">One cell, one hour</title>
+        <desc id="firespread-d6-cell-logic-desc">Flowchart of what firespread computes for one grid cell in one weather hour: a non-burnable fuel code gives no spread; otherwise HRRR wind becomes midflame wind through the wind adjustment factor, temperature, humidity and cloud cover become dead fuel moisture, the Rothermel model turns them with slope into a head rate of spread, the fire ellipse gives the rate in each direction, and a minimum-travel-time search gives each neighbour's arrival time; a crown fire check is roadmap and not in the code.</desc>
+        <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #firespread-d6-cell-logic-root { --paper:       #eef0eb;
+      --ink:         #1f2924;
+      --muted:       #4d5a52;
+      --soft:        #56635b;
+      --accent:      #a8380b;
+      --accent-tint: rgba(168,56,11,0.08);
+      --node:        #ffffff;
+      --opt-fill:    rgba(31,41,36,0.02);
+      --opt-stroke:  rgba(31,41,36,0.30);
+      --rule:        rgba(31,41,36,0.13);
+      --font-sans:   'Geist', system-ui, sans-serif;
+      --font-serif:  'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:   'Geist Mono', ui-monospace, monospace; }
+      @media (prefers-color-scheme: dark) {
+#firespread-d6-cell-logic-root :not([data-theme="light"]) { --paper:       #1c2420;
+        --ink:         #e8ece6;
+        --muted:       #b3bdb4;
+        --soft:        #98a59c;
+        --accent:      #f0874d;
+        --accent-tint: rgba(240,135,77,0.10);
+        --node:        #253029;
+        --opt-fill:    rgba(232,236,230,0.02);
+        --opt-stroke:  rgba(232,236,230,0.30);
+        --rule:        rgba(232,236,230,0.13); }
+}
+      #firespread-d6-cell-logic-root [data-theme="dark"] { --paper:       #1c2420;
+      --ink:         #e8ece6;
+      --muted:       #b3bdb4;
+      --soft:        #98a59c;
+      --accent:      #f0874d;
+      --accent-tint: rgba(240,135,77,0.10);
+      --node:        #253029;
+      --opt-fill:    rgba(232,236,230,0.02);
+      --opt-stroke:  rgba(232,236,230,0.30);
+      --rule:        rgba(232,236,230,0.13); }
+      #firespread-d6-cell-logic-root { font-family: var(--font-sans); color: var(--ink); }
+      #firespread-d6-cell-logic-root .diagram-container { width: 100%; overflow-x: auto; }
+      #firespread-d6-cell-logic-root .bg { fill: var(--paper); }
+      #firespread-d6-cell-logic-root .f-ink { fill: var(--ink); }
+      #firespread-d6-cell-logic-root .f-muted { fill: var(--muted); }
+      #firespread-d6-cell-logic-root .f-soft { fill: var(--soft); }
+      #firespread-d6-cell-logic-root .f-accent { fill: var(--accent); }
+      #firespread-d6-cell-logic-root .node { fill: var(--node); stroke: var(--ink); stroke-width: 1; }
+      #firespread-d6-cell-logic-root .focal { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.2; }
+      #firespread-d6-cell-logic-root .opt { fill: var(--opt-fill); stroke: var(--opt-stroke); stroke-width: 1; stroke-dasharray: 4,3; }
+      #firespread-d6-cell-logic-root .tagbox { fill: none; stroke: var(--opt-stroke); stroke-width: 0.8; }
+      #firespread-d6-cell-logic-root .wire { fill: none; stroke: var(--muted); stroke-width: 1; }
+      #firespread-d6-cell-logic-root .wire-opt { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 5,4; }
+      #firespread-d6-cell-logic-root .s-rule { stroke: var(--rule); stroke-width: 0.8; }
+      #firespread-d6-cell-logic-root .mono { font-family: var(--font-mono); }
+      #firespread-d6-cell-logic-root .sans { font-family: var(--font-sans); }
+      #firespread-d6-cell-logic-root .serif { font-family: var(--font-serif); }
+      #firespread-d6-cell-logic-root .tag { font-size: 7px; letter-spacing: 0.08em; }
+      #firespread-d6-cell-logic-root .lbl { font-size: 8px; letter-spacing: 0.06em; }
+      #firespread-d6-cell-logic-root .leg { font-size: 8px; letter-spacing: 0.14em; }
+      #firespread-d6-cell-logic-root .name { font-size: 12px; font-weight: 600; }
+      #firespread-d6-cell-logic-root .sub { font-size: 9px; }
+      #firespread-d6-cell-logic-root .callout { font-size: 14px; font-style: italic; }
+      @media print {
+#firespread-d6-cell-logic-root .diagram-container { overflow-x: visible; }
+}</style>
+          <marker id="firespread-d6-cell-logic-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="f-muted" points="0 0, 8 3, 0 6"/></marker>
+          <marker id="firespread-d6-cell-logic-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="f-accent" points="0 0, 8 3, 0 6"/></marker>
+          <marker id="firespread-d6-cell-logic-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon class="f-soft" points="0 0, 8 3, 0 6"/></marker>
+        </defs>
+
+        <rect class="bg" width="100%" height="100%"/>
+
+        <!-- ============ Connectors (drawn before nodes) ============ -->
+
+        <!-- Burnable? NO → No spread -->
+        <line class="wire" x1="460" y1="80" x2="539" y2="80" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+        <rect class="bg" x="488" y="60" width="24" height="12" rx="2"/>
+        <text class="mono lbl f-soft" x="500" y="69" text-anchor="middle">NO</text>
+
+        <!-- Burnable? YES → fork -->
+        <line class="wire" x1="380" y1="120" x2="380" y2="144"/>
+        <rect class="bg" x="388" y="124" width="28" height="12" rx="2"/>
+        <text class="mono lbl f-soft" x="402" y="133" text-anchor="middle">YES</text>
+
+        <!-- fork → Midflame wind -->
+        <path class="wire" d="M380 144 H208 Q200 144 200 152 V167" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+        <!-- fork → Dead fuel moisture -->
+        <path class="wire" d="M380 144 H552 Q560 144 560 152 V167" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+
+        <!-- Midflame wind → Rothermel -->
+        <path class="wire" d="M200 256 V268 Q200 276 208 276 H332 Q340 276 340 284 V295" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+        <!-- Dead fuel moisture → Rothermel -->
+        <path class="wire" d="M560 256 V268 Q560 276 552 276 H428 Q420 276 420 284 V295" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+
+        <!-- Rothermel → Crown fire check (roadmap) -->
+        <line class="wire-opt" x1="500" y1="340" x2="579" y2="340" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+
+        <!-- Rothermel → Fire ellipse -->
+        <line class="wire" x1="380" y1="384" x2="380" y2="423" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+        <rect class="bg" x="388" y="398" width="72" height="12" rx="2"/>
+        <text class="mono lbl f-soft" x="424" y="407" text-anchor="middle">R, e, AZIMUTH</text>
+
+        <!-- Fire ellipse → Minimum travel time -->
+        <line class="wire" x1="480" y1="460" x2="519" y2="460" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+        <!-- Minimum travel time → Arrival time -->
+        <line class="wire" x1="760" y1="460" x2="799" y2="460" marker-end="url(#firespread-d6-cell-logic-arrow)"/>
+
+        <!-- ============ Nodes ============ -->
+
+        <!-- 1. Burnable? (decision) -->
+        <polygon class="bg" points="300,80 380,40 460,80 380,120"/>
+        <polygon class="node" points="300,80 380,40 460,80 380,120"/>
+        <text class="sans name f-ink" x="380" y="82" text-anchor="middle">Burnable?</text>
+        <text class="mono sub f-muted" x="380" y="97" text-anchor="middle">FBFM40 code</text>
+
+        <!-- 2. No spread (end) -->
+        <rect class="bg" x="540" y="56" width="200" height="48" rx="20"/>
+        <rect class="node" x="540" y="56" width="200" height="48" rx="20"/>
+        <text class="sans name f-ink" x="640" y="77" text-anchor="middle">No spread</text>
+        <text class="mono sub f-muted" x="640" y="92" text-anchor="middle">91–99, water, listed roads</text>
+
+        <!-- fork dot -->
+        <circle class="f-ink" cx="380" cy="144" r="4"/>
+
+        <!-- 3. Midflame wind -->
+        <rect class="bg" x="80" y="168" width="240" height="88" rx="6"/>
+        <rect class="node" x="80" y="168" width="240" height="88" rx="6"/>
+        <text class="sans name f-ink" x="200" y="194" text-anchor="middle">Midflame wind</text>
+        <text class="mono sub f-muted" x="200" y="214" text-anchor="middle">U20ft = U10 / 1.15</text>
+        <text class="mono sub f-muted" x="200" y="230" text-anchor="middle">× WAF = min(unsheltered, sheltered)</text>
+        <text class="mono sub f-soft" x="200" y="244" text-anchor="middle">HRRR 10 m wind</text>
+
+        <!-- 4. Dead fuel moisture -->
+        <rect class="bg" x="440" y="168" width="240" height="88" rx="6"/>
+        <rect class="node" x="440" y="168" width="240" height="88" rx="6"/>
+        <text class="sans name f-ink" x="560" y="194" text-anchor="middle">Dead fuel moisture</text>
+        <text class="mono sub f-muted" x="560" y="214" text-anchor="middle">T, RH, cloud → sky code → EMC</text>
+        <text class="mono sub f-muted" x="560" y="230" text-anchor="middle">1-h, 10-h: 1.03, 1.28·EMC × factor</text>
+        <text class="mono sub f-soft" x="560" y="244" text-anchor="middle">100-h gridMET · night: D1–D3 option</text>
+
+        <!-- 5. Rothermel head rate (focal) -->
+        <rect class="bg" x="260" y="296" width="240" height="88" rx="6"/>
+        <rect class="focal" x="260" y="296" width="240" height="88" rx="6"/>
+        <text class="sans name f-ink" x="380" y="320" text-anchor="middle">Rothermel head rate</text>
+        <text class="mono sub f-muted" x="380" y="338" text-anchor="middle">R = R₀ (1 + φE), φE = |φw + φs|</text>
+        <text class="mono sub f-muted" x="380" y="353" text-anchor="middle">wind limit policy, default None</text>
+        <text class="mono sub f-muted" x="380" y="368" text-anchor="middle">× spread multiplier per fuel</text>
+
+        <!-- 6. Crown fire check (roadmap) -->
+        <rect class="bg" x="580" y="308" width="200" height="64" rx="6"/>
+        <rect class="opt" x="580" y="308" width="200" height="64" rx="6"/>
+        <rect class="tagbox" x="588" y="314" width="52" height="12" rx="2"/>
+        <text class="mono tag f-soft" x="614" y="323" text-anchor="middle">ROADMAP</text>
+        <text class="sans name f-ink" x="680" y="344" text-anchor="middle">Crown fire check</text>
+        <text class="mono sub f-muted" x="680" y="360" text-anchor="middle">not in the code</text>
+
+        <!-- 7. Fire ellipse -->
+        <rect class="bg" x="280" y="424" width="200" height="72" rx="6"/>
+        <rect class="node" x="280" y="424" width="200" height="72" rx="6"/>
+        <text class="sans name f-ink" x="380" y="448" text-anchor="middle">Fire ellipse</text>
+        <text class="mono sub f-muted" x="380" y="466" text-anchor="middle">length-to-breadth → e</text>
+        <text class="mono sub f-muted" x="380" y="481" text-anchor="middle">r(θ) = R(1−e)/(1−e cos(θ−φ))</text>
+
+        <!-- 8. Minimum travel time -->
+        <rect class="bg" x="520" y="424" width="240" height="72" rx="6"/>
+        <rect class="node" x="520" y="424" width="240" height="72" rx="6"/>
+        <text class="sans name f-ink" x="640" y="448" text-anchor="middle">Minimum travel time</text>
+        <text class="mono sub f-muted" x="640" y="466" text-anchor="middle">32-neighbour stencil, Dijkstra</text>
+        <text class="mono sub f-muted" x="640" y="481" text-anchor="middle">edge length / r(θ)</text>
+
+        <!-- 9. Arrival time (end) -->
+        <rect class="bg" x="800" y="436" width="120" height="48" rx="20"/>
+        <rect class="node" x="800" y="436" width="120" height="48" rx="20"/>
+        <text class="sans name f-ink" x="860" y="457" text-anchor="middle">Arrival time</text>
+        <text class="mono sub f-muted" x="860" y="472" text-anchor="middle">per neighbour, s</text>
+
+        <!-- Callout -->
+        <text class="serif callout f-muted" x="40" y="444">Each hour runs one window,</text>
+        <text class="serif callout f-muted" x="40" y="462">starting from the arrival</text>
+        <text class="serif callout f-muted" x="40" y="480">field the last hour left.</text>
+
+        <!-- ============ Legend ============ -->
+        <line class="s-rule" x1="40" y1="532" x2="920" y2="532"/>
+        <text class="mono leg f-muted" x="40" y="564">LEGEND</text>
+
+        <rect class="focal" x="120" y="556" width="16" height="12" rx="2"/>
+        <text class="mono leg f-muted" x="144" y="565">FOCAL STEP</text>
+
+        <rect class="node" x="248" y="556" width="16" height="12" rx="2"/>
+        <text class="mono leg f-muted" x="272" y="565">STEP</text>
+
+        <polygon class="node" points="332,562 340,555 348,562 340,569"/>
+        <text class="mono leg f-muted" x="356" y="565">DECISION</text>
+
+        <rect class="node" x="448" y="556" width="24" height="12" rx="6"/>
+        <text class="mono leg f-muted" x="480" y="565">END</text>
+
+        <circle class="f-ink" cx="540" cy="562" r="4"/>
+        <text class="mono leg f-muted" x="552" y="565">FORK</text>
+
+        <rect class="opt" x="616" y="556" width="16" height="12" rx="2"/>
+        <text class="mono leg f-muted" x="640" y="565">ROADMAP, NOT BUILT</text>
+      </svg>

@@ -45,6 +45,11 @@ The rest of this file uses these terms.
    the observed perimeter.
 5. A static web page shows the maps, the observed perimeter and the scorecard.
 
+![Six stacked map layers on one 2400 by 2400 grid: terrain, fuel, canopy, weather, fire start and burn probability](docs/diagrams/firespread-d1-layers.svg)
+
+The input layers and the forecast share one grid. The fire start shown is the
+FEDS perimeter of window w1.
+
 ### The spread model
 
 Each member computes the rate of spread in every cell from the Rothermel
@@ -52,6 +57,11 @@ Each member computes the rate of spread in every cell from the Rothermel
 spreads faster in the direction of the wind and up the slope. The model gives
 an elliptical fire shape, and the spread rate in each direction comes from
 that ellipse (Finney 1998). The fire moves between cells over 32 directions.
+
+![Flow chart of the steps in one cell for one hour, ending at the arrival time](docs/diagrams/firespread-d6-cell-logic.svg)
+
+Each hour, every burnable cell goes through these steps. Crown fire is not in
+the code.
 
 The model uses these inputs:
 
@@ -91,6 +101,11 @@ of the window. FEDS is a NASA data set of fire perimeters from satellite
 detections, every 12 h. The entrants are firespread, persistence and uniform
 growth. If the burn probability of a cell is 0.5 or more, the firespread
 forecast counts the cell as burned.
+
+![Timeline of window w1 with maps at 1, 3, 6 and 12 h](docs/diagrams/firespread-d4-horizons.svg)
+
+The forecast makes a map for each forecast hour. FEDS gives a perimeter every
+12 h, so only the 12 h map of w1 has an observation to score against.
 
 | Metric | Meaning | Best value |
 |---|---|---|
@@ -135,7 +150,7 @@ about 0.94 and its precision about 0.70.
 | `python/oracle` | Scripts that write reference values from FireBench and pyretechnics for the Rust tests. |
 | `ui/` | The static web page. |
 | `config/` | Run configurations. |
-| `docs/` | Notes on differences against the reference models. |
+| `docs/` | Notes on differences against the reference models, and the diagrams of this file. |
 
 ## Requirements
 
