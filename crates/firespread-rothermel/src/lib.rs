@@ -3,9 +3,11 @@
 //! RMRS-GTR-371, with SI quantities at this API. The paper's units live in
 //! one private module.
 
+mod ellipse;
 mod error;
 mod paper;
 
+pub use ellipse::{ellipse_rate, length_to_breadth};
 pub use error::{Result, RothermelError};
 pub use firespread_fuel::Category;
 use firespread_fuel::{FuelClass, FuelModelSi, Moistures, units};
@@ -189,6 +191,99 @@ pub fn spread(bed: &FuelBed, env: &Environment, limit: WindLimit) -> Result<Spre
         effective_wind_m_s: units::ft_min_to_m_s(out.effective_wind_ft_min),
         live_mx: out.live_mx,
         residence_time_s: units::min_to_s(out.residence_time_min),
+        fireline_intensity_kw_m: units::btu_ft_s_to_w_m(out.fireline_intensity_btu_ft_s) / 1000.0,
+        flame_length_m: units::ft_to_m(out.flame_length_ft),
+    })
+}
+
+/// Wind and slope with directions in SI. Azimuths are radians clockwise from
+/// north in the horizontal plane; any finite value is accepted.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DirectionalEnvironment {
+    /// Midflame wind speed, m/s.
+    pub midflame_wind_m_s: f64,
+    /// Azimuth the wind blows toward, rad.
+    pub wind_toward_azimuth_rad: f64,
+    /// Slope steepness, rise over run.
+    pub slope_tan: f64,
+    /// Upslope azimuth, rad.
+    pub upslope_azimuth_rad: f64,
+}
+
+/// Directional spread output in SI: the head of the fire and the Finney
+/// (1998) RMRS-RP-4 p. 7 ellipse around it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DirectionalOutput {
+    /// Head rate of spread R = R_0 (1 + φ_E), m/s.
+    pub head_ros_m_s: f64,
+    /// Azimuth of maximum spread, rad clockwise from north in [0, 2π).
+    pub max_spread_azimuth_rad: f64,
+    /// Magnitude φ_E of the resultant of φ_w and φ_s that R used.
+    pub phi_e: f64,
+    /// Effective midflame wind speed U_E of the resultant, m/s.
+    pub effective_wind_m_s: f64,
+    /// Length-to-breadth ratio LB (eq. [13]).
+    pub length_to_breadth: f64,
+    /// Head-to-back ratio HB (eq. [14]).
+    pub head_to_back: f64,
+    /// Backing rate of spread R/HB, m/s.
+    pub backing_ros_m_s: f64,
+    /// Flanking rate of spread, the semi-minor axis a of eq. [15], m/s.
+    pub flanking_ros_m_s: f64,
+    /// Eccentricity e = (1 − 1/LB²)^0.5 of the ellipse.
+    pub eccentricity: f64,
+    /// Zero-wind, zero-slope rate of spread R_0, m/s.
+    pub ros_no_wind_no_slope_m_s: f64,
+    /// Reaction intensity I_R, kW/m2.
+    pub reaction_intensity_kw_m2: f64,
+    /// Byram fireline intensity I_B at the head rate, kW/m.
+    pub fireline_intensity_kw_m: f64,
+    /// Byram flame length F_B at the head rate, m.
+    pub flame_length_m: f64,
+}
+
+/// Runs the final model of Andrews (2018) Table 6 with wind and slope
+/// combined as vectors (Finney 1998 RMRS-RP-4 p. 6 eqs. [11], [12]) under the
+/// given wind policy, and fits the RMRS-RP-4 p. 7 ellipse (eqs. [13]-[17])
+/// at the resultant's effective wind. The vectors are summed in the
+/// horizontal plane, not projected onto the slope plane as RP-4 eq. [6] does.
+/// When the resultant is zero the azimuth is the upslope azimuth if the slope
+/// is positive, else the wind azimuth if the wind is positive, else 0.
+pub fn spread_directional(
+    bed: &FuelBed,
+    env: &DirectionalEnvironment,
+    limit: WindLimit,
+) -> Result<DirectionalOutput> {
+    let classes: Vec<paper::Class> = bed.classes.iter().map(|c| c.to_paper()).collect();
+    let paper_bed = paper::Bed {
+        classes: &classes,
+        depth_ft: units::m_to_ft(bed.depth_m),
+        dead_mx: bed.dead_mx,
+    };
+    let paper_env = paper::DirEnv {
+        wind_ft_min: units::m_s_to_ft_min(env.midflame_wind_m_s),
+        wind_toward_azimuth_rad: env.wind_toward_azimuth_rad,
+        slope_tan: env.slope_tan,
+        upslope_azimuth_rad: env.upslope_azimuth_rad,
+    };
+    let out = paper::spread_directional(&paper_bed, &paper_env, limit)?;
+    let head = units::ft_min_to_m_s(out.ros_ft_min);
+    let u_e = units::ft_min_to_m_s(out.effective_wind_ft_min);
+    let lb = ellipse::length_to_breadth(u_e);
+    let hb = ellipse::head_to_back(lb);
+    Ok(DirectionalOutput {
+        head_ros_m_s: head,
+        max_spread_azimuth_rad: out.max_spread_azimuth_rad,
+        phi_e: out.phi_e,
+        effective_wind_m_s: u_e,
+        length_to_breadth: lb,
+        head_to_back: hb,
+        backing_ros_m_s: head / hb,
+        flanking_ros_m_s: ellipse::semi_minor(head, hb, lb),
+        eccentricity: ellipse::eccentricity(lb),
+        ros_no_wind_no_slope_m_s: units::ft_min_to_m_s(out.r0_ft_min),
+        reaction_intensity_kw_m2: units::btu_ft2_min_to_w_m2(out.reaction_intensity_btu_ft2_min)
+            / 1000.0,
         fireline_intensity_kw_m: units::btu_ft_s_to_w_m(out.fireline_intensity_btu_ft_s) / 1000.0,
         flame_length_m: units::ft_to_m(out.flame_length_ft),
     })

@@ -344,9 +344,237 @@ fn category_values(classes: &[&Class], a_i: f64, a_t: f64) -> CategoryValues {
     }
 }
 
+/// Wind-independent quantities of the final model plus the validated wind
+/// speed and slope.
+struct Base {
+    wind: f64,
+    r0: f64,
+    ir: f64,
+    xi: f64,
+    heat_sink: f64,
+    sigma: f64,
+    beta: f64,
+    beta_op: f64,
+    ratio: f64,
+    phi_s: f64,
+    c: f64,
+    b: f64,
+    e: f64,
+    u_max: f64,
+    live_mx: Option<f64>,
+    tr: f64,
+}
+
 /// Final (heterogeneous) model, Table 6a-6c (pp. 17-19), with the wind policy
 /// of §3.2.7 (p. 25) and the related models of Table 7 (p. 26).
 pub(crate) fn spread(bed: &Bed<'_>, env: &Env, limit: WindLimit) -> Result<Output> {
+    let Base {
+        wind,
+        r0,
+        ir,
+        xi,
+        heat_sink,
+        sigma,
+        beta,
+        beta_op,
+        ratio,
+        phi_s,
+        c,
+        b,
+        e,
+        u_max,
+        live_mx: live_mx_value,
+        tr,
+    } = base(bed, env)?;
+    let (wind_used, phi_w_value, phi_e, u_e, limited) = match limit {
+        WindLimit::None => {
+            let pw = phi_w(c, b, e, wind, ratio);
+            let pe = pw + phi_s;
+            (wind, pw, pe, effective_wind(pe, c, b, e, ratio), false)
+        }
+        WindLimit::Rothermel => {
+            let (u, limited) = if wind > u_max {
+                (u_max, true)
+            } else {
+                (wind, false)
+            };
+            let pw = phi_w(c, b, e, u, ratio);
+            let pe = pw + phi_s;
+            (u, pw, pe, effective_wind(pe, c, b, e, ratio), limited)
+        }
+        WindLimit::EffectiveWind => {
+            let pw = phi_w(c, b, e, wind, ratio);
+            let pe = pw + phi_s;
+            let u_e = effective_wind(pe, c, b, e, ratio);
+            if u_e > u_max {
+                (wind, pw, phi_w(c, b, e, u_max, ratio), u_max, true)
+            } else {
+                (wind, pw, pe, u_e, false)
+            }
+        }
+    };
+    // R = R_0 (1 + φ_w + φ_s) (eq. 75).
+    let ros = r0 * (1.0 + phi_e);
+
+    let ib = fireline_intensity(ir, tr, ros);
+    Ok(Output {
+        ros_ft_min: ros,
+        r0_ft_min: r0,
+        reaction_intensity_btu_ft2_min: ir,
+        xi,
+        heat_sink_btu_ft3: heat_sink,
+        sigma_per_ft: sigma,
+        beta,
+        beta_op,
+        phi_w: phi_w_value,
+        phi_s,
+        phi_e,
+        wind_used_ft_min: wind_used,
+        effective_wind_ft_min: u_e,
+        wind_limited: limited,
+        live_mx: live_mx_value,
+        residence_time_min: tr,
+        fireline_intensity_btu_ft_s: ib,
+        flame_length_ft: flame_length(ib),
+    })
+}
+
+/// Wind and slope with directions, in the paper's units. Azimuths are
+/// radians clockwise from north in the horizontal plane.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DirEnv {
+    /// Midflame wind speed U, ft/min.
+    pub wind_ft_min: f64,
+    /// Azimuth the wind blows toward, rad.
+    pub wind_toward_azimuth_rad: f64,
+    /// Slope steepness tan φ, fraction.
+    pub slope_tan: f64,
+    /// Upslope azimuth, rad.
+    pub upslope_azimuth_rad: f64,
+}
+
+/// Directional model output in the paper's units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DirOutput {
+    /// Head rate of spread R_0 (1 + φ_E), ft/min.
+    pub ros_ft_min: f64,
+    /// Zero-wind, zero-slope rate of spread R_0, ft/min.
+    pub r0_ft_min: f64,
+    /// Reaction intensity I_R, Btu/ft2-min.
+    pub reaction_intensity_btu_ft2_min: f64,
+    /// Azimuth of maximum spread, rad in [0, 2π).
+    pub max_spread_azimuth_rad: f64,
+    /// Magnitude φ_E of the resultant of φ_w and φ_s, or the limited value.
+    pub phi_e: f64,
+    /// Effective midflame wind speed U_E, ft/min.
+    pub effective_wind_ft_min: f64,
+    /// Byram fireline intensity I_B at the head rate, Btu/ft/s.
+    pub fireline_intensity_btu_ft_s: f64,
+    /// Byram flame length F_B at the head rate, ft.
+    pub flame_length_ft: f64,
+}
+
+/// Maps an angle in radians onto [0, 2π).
+fn normalize_azimuth(rad: f64) -> f64 {
+    let r = rad.rem_euclid(core::f64::consts::TAU);
+    if r >= core::f64::consts::TAU { 0.0 } else { r }
+}
+
+fn check_finite(field: &'static str, value: f64) -> Result<f64> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(RothermelError::InvalidInput {
+            field,
+            bound: "real",
+            value,
+        })
+    }
+}
+
+/// Final model with wind and slope as vectors: Finney (1998) RMRS-RP-4 p. 6
+/// eqs. [11], [12] take the direction of maximum spread as the angle of the
+/// resultant of φ_w (along the azimuth the wind blows toward) and φ_s
+/// (upslope), and R = R_0 (1 + |φ_w ŵ + φ_s ŝ|); p. 7 takes U_E as the wind
+/// that alone gives that resultant (eq. [12] solved for U, here the inverse of
+/// Andrews 2018 §4.1 p. 27). The wind policy is that of `spread`:
+/// `Rothermel` caps U before φ_w; `EffectiveWind` caps U_E of the resultant
+/// at 0.9 I_R and recomputes φ_E there, keeping the resultant's direction.
+/// When the resultant is zero the azimuth is the upslope azimuth if
+/// tan φ > 0, else the wind azimuth if U > 0, else 0.
+///
+/// Restriction: the vectors are summed in the horizontal plane with map
+/// azimuths; RP-4 eq. [6] instead projects the angles onto the local surface
+/// plane.
+pub(crate) fn spread_directional(
+    bed: &Bed<'_>,
+    env: &DirEnv,
+    limit: WindLimit,
+) -> Result<DirOutput> {
+    let base = base(
+        bed,
+        &Env {
+            wind_ft_min: env.wind_ft_min,
+            slope_tan: env.slope_tan,
+        },
+    )?;
+    let wind_az = check_finite("wind azimuth", env.wind_toward_azimuth_rad)?;
+    let upslope_az = check_finite("upslope azimuth", env.upslope_azimuth_rad)?;
+    let Base {
+        wind,
+        r0,
+        ir,
+        ratio,
+        phi_s,
+        c,
+        b,
+        e,
+        u_max,
+        tr,
+        ..
+    } = base;
+
+    let wind_used = match limit {
+        WindLimit::Rothermel => wind.min(u_max),
+        WindLimit::None | WindLimit::EffectiveWind => wind,
+    };
+    let pw = phi_w(c, b, e, wind_used, ratio);
+    // Components (east, north) of φ_w ŵ + φ_s ŝ with ŵ = (sin θ_w, cos θ_w).
+    let east = pw * wind_az.sin() + phi_s * upslope_az.sin();
+    let north = pw * wind_az.cos() + phi_s * upslope_az.cos();
+    let resultant = east.hypot(north);
+    let azimuth = if resultant > 0.0 {
+        normalize_azimuth(east.atan2(north))
+    } else if env.slope_tan > 0.0 {
+        normalize_azimuth(upslope_az)
+    } else if wind > 0.0 {
+        normalize_azimuth(wind_az)
+    } else {
+        0.0
+    };
+    let u_e = effective_wind(resultant, c, b, e, ratio);
+    let (phi_e, u_e) = match limit {
+        WindLimit::EffectiveWind if u_e > u_max => (phi_w(c, b, e, u_max, ratio), u_max),
+        _ => (resultant, u_e),
+    };
+    // R = R_0 (1 + φ_E) (Rothermel 1972 eq. 75 with the vector φ_E).
+    let ros = r0 * (1.0 + phi_e);
+    let ib = fireline_intensity(ir, tr, ros);
+    Ok(DirOutput {
+        ros_ft_min: ros,
+        r0_ft_min: r0,
+        reaction_intensity_btu_ft2_min: ir,
+        max_spread_azimuth_rad: azimuth,
+        phi_e,
+        effective_wind_ft_min: u_e,
+        fireline_intensity_btu_ft_s: ib,
+        flame_length_ft: flame_length(ib),
+    })
+}
+
+/// Validates the bed and environment and computes the wind-independent part
+/// of the final model, Table 6a-6c (pp. 17-19).
+fn base(bed: &Bed<'_>, env: &Env) -> Result<Base> {
     let depth = check("depth", bed.depth_ft, true)?;
     let mx1 = check("dead moisture of extinction", bed.dead_mx, true)?;
     let wind = check("wind", env.wind_ft_min, false)?;
@@ -434,60 +662,23 @@ pub(crate) fn spread(bed: &Bed<'_>, env: &Env, limit: WindLimit) -> Result<Outpu
     // R_0 = I_R ξ / (ρ_b ε Q_ig) (eq. 75).
     let r0 = ir * xi / heat_sink;
 
-    let phi_s = phi_s(beta, slope_tan);
-    let (c, b, e) = (wind_c(sigma), wind_b(sigma), wind_e(sigma));
-    let u_max = wind_limit_ft_min(ir);
-    let (wind_used, phi_w_value, phi_e, u_e, limited) = match limit {
-        WindLimit::None => {
-            let pw = phi_w(c, b, e, wind, ratio);
-            let pe = pw + phi_s;
-            (wind, pw, pe, effective_wind(pe, c, b, e, ratio), false)
-        }
-        WindLimit::Rothermel => {
-            let (u, limited) = if wind > u_max {
-                (u_max, true)
-            } else {
-                (wind, false)
-            };
-            let pw = phi_w(c, b, e, u, ratio);
-            let pe = pw + phi_s;
-            (u, pw, pe, effective_wind(pe, c, b, e, ratio), limited)
-        }
-        WindLimit::EffectiveWind => {
-            let pw = phi_w(c, b, e, wind, ratio);
-            let pe = pw + phi_s;
-            let u_e = effective_wind(pe, c, b, e, ratio);
-            if u_e > u_max {
-                (wind, pw, phi_w(c, b, e, u_max, ratio), u_max, true)
-            } else {
-                (wind, pw, pe, u_e, false)
-            }
-        }
-    };
-    // R = R_0 (1 + φ_w + φ_s) (eq. 75).
-    let ros = r0 * (1.0 + phi_e);
-
-    let tr = residence_time_min(sigma);
-    let ib = fireline_intensity(ir, tr, ros);
-    Ok(Output {
-        ros_ft_min: ros,
-        r0_ft_min: r0,
-        reaction_intensity_btu_ft2_min: ir,
+    Ok(Base {
+        wind,
+        r0,
+        ir,
         xi,
-        heat_sink_btu_ft3: heat_sink,
-        sigma_per_ft: sigma,
+        heat_sink,
+        sigma,
         beta,
         beta_op,
-        phi_w: phi_w_value,
-        phi_s,
-        phi_e,
-        wind_used_ft_min: wind_used,
-        effective_wind_ft_min: u_e,
-        wind_limited: limited,
+        ratio,
+        phi_s: phi_s(beta, slope_tan),
+        c: wind_c(sigma),
+        b: wind_b(sigma),
+        e: wind_e(sigma),
+        u_max: wind_limit_ft_min(ir),
         live_mx: live_mx_value,
-        residence_time_min: tr,
-        fireline_intensity_btu_ft_s: ib,
-        flame_length_ft: flame_length(ib),
+        tr: residence_time_min(sigma),
     })
 }
 
