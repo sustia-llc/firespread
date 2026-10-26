@@ -1,4 +1,7 @@
 # Run settings for `firespread ensemble --config`. Road codes 1 to 4 of
 # `grid/roads.tif` (motorway or trunk, primary, secondary, tertiary) are
-# non-burnable.
+# non-burnable. The wind speed perturbation sd of 0.4 is calibrated on w1.
 road_barrier_codes = [1, 2, 3, 4]
+
+[perturbation]
+wind_speed_sd = 0.4

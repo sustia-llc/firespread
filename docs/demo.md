@@ -47,7 +47,7 @@ target/release/firespread score --run data/runs/demo/w3-seed7-m200 --data data
 ```
 
 On the 12-thread development machine, the ensembles took about 13 s for w1,
-50 s for w2 and 240 s for w3. Only w1 is fast enough to run live.
+49 s for w2 and 222 s for w3. Only w1 is fast enough to run live.
 
 ## 3. Start the page
 
@@ -128,19 +128,51 @@ The two hashes are equal.
 
 ### The honest scorecard
 
-The uncalibrated kernel loses to persistence in every window, and to uniform
-growth in w2 and w3. These are the Jaccard values of the runs above, measured
-on 2026-10-26:
+firespread has a lower Jaccard than persistence in every window. It has a
+higher Jaccard than uniform growth in w1, and a lower one in w2 and w3. These
+are the Jaccard values of the runs above, measured on 2026-10-26:
 
 | Window | firespread | Persistence | Uniform growth |
 |---|---|---|---|
-| w1 | 0.407 | 0.416 | 0.400 |
-| w2 | 0.729 | 0.821 | 0.823 |
-| w3 | 0.671 | 0.894 | 0.851 |
+| w1 | 0.408 | 0.416 | 0.400 |
+| w2 | 0.735 | 0.821 | 0.823 |
+| w3 | 0.679 | 0.894 | 0.851 |
 
 The scorecard makes this result visible. That is its purpose.
 
+### Calibration log
+
+Each step changed one setting from the earlier defaults (spread multiplier
+1.0, wind speed sd 0.2, wind direction sd 15°). Each row is the firespread
+score against FEDS at h12 in w1, seed 7, 200 members, road codes 1 to 4,
+measured on 2026-10-26. Only w1 was used to choose a value.
+
+| Step | Jaccard | Brier | Precision | Recall |
+|---|---|---|---|---|
+| earlier defaults | 0.4068 | 0.1548 | 0.728 | 0.480 |
+| spread multiplier 1.5 | 0.3897 | 0.1873 | 0.641 | 0.499 |
+| spread multiplier 2 | 0.3725 | 0.2194 | 0.571 | 0.518 |
+| spread multiplier 3 | 0.3407 | 0.2914 | 0.462 | 0.564 |
+| spread multiplier 5 | 0.2984 | 0.4304 | 0.358 | 0.643 |
+| wind speed sd 0.4 | 0.4084 | 0.1489 | 0.734 | 0.479 |
+| wind direction sd 30° | 0.4048 | 0.1532 | 0.725 | 0.478 |
+| wind speed sd 0.4 and direction sd 30° | 0.4065 | 0.1481 | 0.733 | 0.477 |
+
+The rule was the highest Jaccard. Wind speed sd 0.4 won. It also had the
+higher Jaccard at two more seeds on w1:
+
+| Seed | Jaccard, sd 0.2 | Jaccard, sd 0.4 | Brier, sd 0.2 | Brier, sd 0.4 |
+|---|---|---|---|---|
+| 7 | 0.4068 | 0.4084 | 0.1548 | 0.1489 |
+| 8 | 0.4076 | 0.4098 | 0.1542 | 0.1484 |
+| 9 | 0.4081 | 0.4095 | 0.1551 | 0.1502 |
+
+Both configuration files now set `wind_speed_sd = 0.4`. The spread
+multiplier stays 1.0.
+
 ### Sensitivity tables
+
+These tables were measured with wind speed sd 0.2, before the calibration.
 
 Road barriers, firespread Jaccard (seed 7, 200 members):
 
@@ -179,7 +211,6 @@ These items are on the roadmap and are not in the demo:
 - The FireBench HDF5 package of the case.
 - Boundary distance, Hausdorff distance and buffered overlap metrics.
 - Crown fire.
-- Calibration of the spread multiplier and wind perturbation.
 - Lean proofs (Phase 5a, after the hackathon). The first proofs cover the
   metrics: Jaccard and Dice lie in [0, 1], and Dice equals 2J / (1 + J). Later
   proofs cover the Rothermel factor algebra and the unit conversions. Each

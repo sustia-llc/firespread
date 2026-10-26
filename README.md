@@ -121,19 +121,22 @@ final perimeter.
 
 ## Current results
 
-These numbers come from runs on 2026-10-26: seed 7, 200 members, road classes
-1 to 4 as barriers. Window w3 also uses the D3 night moisture setting. The
-kernel has no calibration yet. It loses to persistence in every window, and to
-uniform growth in w2 and w3.
+These numbers come from runs on 2026-10-26 with `config/default.toml` (w1, w2)
+and `config/w3.toml` (w3): seed 7, 200 members, road classes 1 to 4 as
+barriers, wind speed perturbation sd 0.4. Window w3 also uses the D3 night
+moisture setting. The wind speed sd was chosen on w1 only, and w2 and w3 were
+scored after that choice. firespread has a lower Jaccard than persistence in
+every window. It has a higher Jaccard than uniform growth in w1, and a lower
+one in w2 and w3.
 
 | Window | Period (UTC) | firespread Jaccard | Persistence Jaccard | Uniform growth Jaccard | firespread Brier | Persistence Brier | Uniform growth Brier |
 |---|---|---|---|---|---|---|---|
-| w1 | 2022-04-22 12:00 to 04-23 00:00 | 0.407 | 0.416 | 0.400 | 0.155 | 0.121 | 0.161 |
-| w2 | 2022-05-01 12:00 to 05-02 00:00 | 0.729 | 0.821 | 0.823 | 0.139 | 0.091 | 0.092 |
-| w3 | 2022-05-10 12:00 to 05-11 12:00 | 0.671 | 0.894 | 0.851 | 0.199 | 0.059 | 0.090 |
+| w1 | 2022-04-22 12:00 to 04-23 00:00 | 0.408 | 0.416 | 0.400 | 0.149 | 0.121 | 0.161 |
+| w2 | 2022-05-01 12:00 to 05-02 00:00 | 0.735 | 0.821 | 0.823 | 0.131 | 0.091 | 0.092 |
+| w3 | 2022-05-10 12:00 to 05-11 12:00 | 0.679 | 0.894 | 0.851 | 0.190 | 0.059 | 0.090 |
 
-In w1 the forecast burns too little. In w3 it burns too much: its recall is
-about 0.94 and its precision about 0.70.
+In w1 the forecast recall is 0.48 and its precision 0.73. In w3 its recall is
+0.93 and its precision 0.71. `docs/demo.md` gives the w1 calibration log.
 
 ## Repository layout
 
