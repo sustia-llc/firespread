@@ -1,17 +1,20 @@
 //! The `ensemble` command: one forecast run of a window through the agents
 //! [`Forecaster`], with barrier road codes passed to its files source.
 
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
 use firespread_agents::{EnsembleSpec, Event, ForecastConfig, Forecaster, Published, Source};
-use firespread_ensemble::{HourlyConfig, HourlyPerturbation};
+use firespread_ensemble::HourlyConfig;
 use firespread_grid::{ForecastWindow, Manifest};
 use serde::{Deserialize, Serialize};
 
-use crate::settings::{NightMoistureSettings, RunSettings, Scenario, load_window};
+use crate::settings::{
+    NightMoistureSettings, PerturbationSettings, RunSettings, Scenario, load_window,
+};
 use crate::timefmt::{feds_label, parse_hour};
 
 /// Longest wait for [`Forecaster::shutdown`] to drain the agents.
@@ -74,6 +77,15 @@ pub struct RunConfigFile {
     /// The night moisture setting; absent when off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub night_moisture: Option<NightMoistureRecord>,
+    /// The spread multiplier of every model; absent when 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spread_multiplier: Option<f64>,
+    /// The per-model spread multiplier overrides; absent when empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub spread_multiplier_by_model: BTreeMap<String, f64>,
+    /// The perturbation table; absent when every value is its default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perturbation: Option<PerturbationSettings>,
 }
 
 /// The night moisture setting of a run: its scenario, the dead 1-h, 10-h
@@ -102,7 +114,7 @@ impl NightMoistureRecord {
 }
 
 /// The hourly configuration of `settings`: [`HourlyConfig::default`] with
-/// its night moisture.
+/// its night moisture and [`RunSettings::spread_multipliers`].
 pub fn hourly_config(settings: &RunSettings) -> Result<HourlyConfig> {
     Ok(HourlyConfig {
         night_moisture: settings
@@ -110,8 +122,22 @@ pub fn hourly_config(settings: &RunSettings) -> Result<HourlyConfig> {
             .as_ref()
             .map(NightMoistureSettings::to_night)
             .transpose()?,
+        spread_multiplier: settings.spread_multipliers()?,
         ..HourlyConfig::default()
     })
+}
+
+/// The ensemble of `members` members from `seed` with the settings'
+/// horizons and [`PerturbationSettings::to_perturbation`] of its
+/// perturbation table.
+#[must_use]
+pub fn ensemble_spec(settings: &RunSettings, seed: u64, members: u32) -> EnsembleSpec {
+    EnsembleSpec {
+        seed,
+        members,
+        horizons_h: settings.horizons_h.clone(),
+        perturbation: settings.perturbation.to_perturbation(),
+    }
 }
 
 /// What a finished run reports.
@@ -145,12 +171,7 @@ pub async fn run(args: &EnsembleArgs, stop: impl Future<Output = ()>) -> Result<
             fireids: window.fireids,
         },
         hourly: hourly_config(&args.settings)?,
-        ensemble: EnsembleSpec {
-            seed: args.seed,
-            members: args.members,
-            horizons_h: args.settings.horizons_h.clone(),
-            perturbation: HourlyPerturbation::default(),
-        },
+        ensemble: ensemble_spec(&args.settings, args.seed, args.members),
         threads: args.threads,
     };
     let source = Source::Files {
@@ -259,6 +280,11 @@ pub async fn forecast(
                 .as_ref()
                 .map(NightMoistureRecord::new)
                 .transpose()?,
+            spread_multiplier: Some(settings.spread_multiplier)
+                .filter(|&m| m != RunSettings::default().spread_multiplier),
+            spread_multiplier_by_model: settings.spread_multiplier_by_model.clone(),
+            perturbation: Some(settings.perturbation)
+                .filter(|p| *p != PerturbationSettings::default()),
         },
     )?;
     Ok(RunSummary {

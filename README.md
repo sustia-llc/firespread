@@ -230,6 +230,21 @@ The `--config` option takes a TOML file. Every key is optional.
 | `road_barrier_codes` | Road classes that do not burn: 1 motorway or trunk, 2 primary, 3 secondary, 4 tertiary, 5 unclassified, residential or service, 6 other. | none |
 | `horizons_h` | Forecast hours that get a probability map. | `[1, 3, 6, 12]` |
 | `[night_moisture]` | Fixed dead fuel moisture for night hours. | off |
+| `spread_multiplier` | Factor on the head rate of spread of every burnable fuel model. Finite and at least 0. | `1.0` |
+| `[spread_multiplier_by_model]` | Factors that replace `spread_multiplier` for the fuel models they name, for example `GR2 = 2.0`. | none |
+| `[perturbation]` | Per-member random changes of the ensemble. | see below |
+
+The `[perturbation]` table takes these keys. Each value is finite and at
+least 0.
+
+| Key | Meaning | Default |
+|---|---|---|
+| `ignition_radius_m` | Radius of the disc that the start perimeter offset is uniform in, m. | `375.0` |
+| `wind_speed_sd` | Standard deviation of the wind speed factor N(1, sd), cut at 0. | `0.2` |
+| `wind_direction_sd_deg` | Standard deviation of the wind direction offset, degrees. | `15.0` |
+| `dead_moisture_log_sd` | Standard deviation of the log of the dead moisture factor. | `0.1` |
+
+If a run uses a value other than the default, `run_config.json` records it.
 
 The `[night_moisture]` table takes these keys:
 

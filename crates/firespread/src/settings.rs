@@ -1,9 +1,12 @@
 //! Run settings read from a TOML file, and the window list of `windows.json`.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail, ensure};
-use firespread_ensemble::{NightMoisture, NightScenario};
+use firespread_ensemble::{
+    BURNABLE_FBFM40, HourlyPerturbation, N_MODELS, NightMoisture, NightScenario,
+};
 use serde::{Deserialize, Serialize};
 
 /// Road codes of `grid/roads.tif`: 1 motorway or trunk, 2 primary,
@@ -121,6 +124,60 @@ impl NightMoistureSettings {
     }
 }
 
+/// The `[perturbation]` table: the per-member perturbations of a run, each
+/// finite and >= 0. The defaults are those of [`HourlyPerturbation::default`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PerturbationSettings {
+    /// Radius of the disc the start-mask offset is uniform in, m; default 375.
+    pub ignition_radius_m: f64,
+    /// Standard deviation of the wind speed factor; default 0.2.
+    pub wind_speed_sd: f64,
+    /// Standard deviation of the wind direction offset, degrees; default 15.
+    pub wind_direction_sd_deg: f64,
+    /// Standard deviation of the log of the dead moisture factor; default 0.1.
+    pub dead_moisture_log_sd: f64,
+}
+
+impl Default for PerturbationSettings {
+    fn default() -> Self {
+        Self {
+            ignition_radius_m: 375.0,
+            wind_speed_sd: 0.2,
+            wind_direction_sd_deg: 15.0,
+            dead_moisture_log_sd: 0.1,
+        }
+    }
+}
+
+impl PerturbationSettings {
+    /// The engine setting, with the direction sd converted to radians.
+    #[must_use]
+    pub fn to_perturbation(self) -> HourlyPerturbation {
+        HourlyPerturbation {
+            ignition_radius_m: self.ignition_radius_m,
+            wind_speed_sd: self.wind_speed_sd,
+            wind_direction_sd_rad: self.wind_direction_sd_deg.to_radians(),
+            dead_moisture_log_sd: self.dead_moisture_log_sd,
+        }
+    }
+
+    fn validated(&self) -> Result<()> {
+        for (key, value) in [
+            ("ignition_radius_m", self.ignition_radius_m),
+            ("wind_speed_sd", self.wind_speed_sd),
+            ("wind_direction_sd_deg", self.wind_direction_sd_deg),
+            ("dead_moisture_log_sd", self.dead_moisture_log_sd),
+        ] {
+            ensure!(
+                value.is_finite() && value >= 0.0,
+                "perturbation.{key} is {value}, expected a finite value >= 0"
+            );
+        }
+        Ok(())
+    }
+}
+
 /// Settings of an `ensemble` run that the command line does not carry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -131,6 +188,15 @@ pub struct RunSettings {
     pub horizons_h: Vec<u32>,
     /// Night dead fuel moisture; off when absent.
     pub night_moisture: Option<NightMoistureSettings>,
+    /// Spread multiplier of every burnable FBFM40 model, finite and >= 0;
+    /// default 1.
+    pub spread_multiplier: f64,
+    /// Spread multipliers that replace `spread_multiplier` for the models
+    /// they name, keyed by the [`BURNABLE_FBFM40`] name, each finite and
+    /// >= 0; empty by default.
+    pub spread_multiplier_by_model: BTreeMap<String, f64>,
+    /// Per-member perturbations.
+    pub perturbation: PerturbationSettings,
 }
 
 impl Default for RunSettings {
@@ -139,6 +205,9 @@ impl Default for RunSettings {
             road_barrier_codes: Vec::new(),
             horizons_h: vec![1, 3, 6, 12],
             night_moisture: None,
+            spread_multiplier: 1.0,
+            spread_multiplier_by_model: BTreeMap::new(),
+            perturbation: PerturbationSettings::default(),
         }
     }
 }
@@ -146,7 +215,9 @@ impl Default for RunSettings {
 impl RunSettings {
     /// The settings in the TOML file at `path`, or the defaults for `None`.
     /// Road codes must lie in [`ROAD_CODES`] and are returned sorted without
-    /// repeats; the horizon list must be non-empty with every horizon > 0.
+    /// repeats; the horizon list must be non-empty with every horizon > 0;
+    /// the spread multipliers must pass [`Self::spread_multipliers`] and
+    /// every perturbation value must be finite and >= 0.
     pub fn load(path: Option<&Path>) -> Result<Self> {
         let settings = match path {
             None => Self::default(),
@@ -179,7 +250,34 @@ impl RunSettings {
         if let Some(night) = &self.night_moisture {
             night.to_night()?;
         }
+        self.spread_multipliers()?;
+        self.perturbation.validated()?;
         Ok(self)
+    }
+
+    /// The spread multiplier per entry of [`BURNABLE_FBFM40`]:
+    /// `spread_multiplier_by_model` at the models it names,
+    /// `spread_multiplier` at every other. Fails on a model name outside
+    /// [`BURNABLE_FBFM40`] or a value that is not finite and >= 0.
+    pub fn spread_multipliers(&self) -> Result<[f64; N_MODELS]> {
+        let check = |key: &str, value: f64| {
+            ensure!(
+                value.is_finite() && value >= 0.0,
+                "{key} is {value}, expected a finite value >= 0"
+            );
+            Ok(())
+        };
+        check("spread_multiplier", self.spread_multiplier)?;
+        let mut out = [self.spread_multiplier; N_MODELS];
+        for (model, &value) in &self.spread_multiplier_by_model {
+            let key = format!("spread_multiplier_by_model.{model}");
+            let Some(i) = BURNABLE_FBFM40.iter().position(|&(_, m)| m == model) else {
+                bail!("{key} names no burnable FBFM40 model");
+            };
+            check(&key, value)?;
+            out[i] = value;
+        }
+        Ok(out)
     }
 }
 
@@ -245,6 +343,132 @@ mod tests {
 
         let path = write("h0", "horizons_h = [0, 12]\n");
         assert!(RunSettings::load(Some(&path)).is_err(), "horizon 0 read");
+    }
+
+    #[test]
+    fn calibration_keys_are_read() {
+        let got = RunSettings::load(Some(&write("calib-absent", "horizons_h = [12]\n"))).unwrap();
+        assert_eq!(got.spread_multiplier, 1.0, "default multiplier");
+        assert!(
+            got.spread_multiplier_by_model.is_empty(),
+            "default overrides"
+        );
+        assert_eq!(got.perturbation, PerturbationSettings::default());
+
+        let path = write(
+            "calib",
+            "spread_multiplier = 1.5\n\
+             [spread_multiplier_by_model]\nGR2 = 2.0\nSH2 = 0.5\n\
+             [perturbation]\nignition_radius_m = 100.0\nwind_speed_sd = 0.3\n\
+             wind_direction_sd_deg = 30.0\ndead_moisture_log_sd = 0.05\n",
+        );
+        let got = RunSettings::load(Some(&path)).unwrap();
+        assert_eq!(got.spread_multiplier, 1.5);
+        assert_eq!(
+            got.spread_multiplier_by_model,
+            BTreeMap::from([("GR2".to_string(), 2.0), ("SH2".to_string(), 0.5)])
+        );
+        assert_eq!(
+            got.perturbation,
+            PerturbationSettings {
+                ignition_radius_m: 100.0,
+                wind_speed_sd: 0.3,
+                wind_direction_sd_deg: 30.0,
+                dead_moisture_log_sd: 0.05,
+            }
+        );
+
+        let path = write("calib-partial", "[perturbation]\nwind_speed_sd = 0.4\n");
+        let got = RunSettings::load(Some(&path)).unwrap();
+        assert_eq!(
+            got.perturbation,
+            PerturbationSettings {
+                wind_speed_sd: 0.4,
+                ..PerturbationSettings::default()
+            },
+            "a partial table keeps the other defaults"
+        );
+    }
+
+    #[test]
+    fn perturbation_converts_degrees_to_radians() {
+        assert_eq!(
+            PerturbationSettings::default().to_perturbation(),
+            HourlyPerturbation::default()
+        );
+        let got = PerturbationSettings {
+            ignition_radius_m: 100.0,
+            wind_speed_sd: 0.3,
+            wind_direction_sd_deg: 90.0,
+            dead_moisture_log_sd: 0.05,
+        }
+        .to_perturbation();
+        assert_eq!(
+            got,
+            HourlyPerturbation {
+                ignition_radius_m: 100.0,
+                wind_speed_sd: 0.3,
+                wind_direction_sd_rad: std::f64::consts::FRAC_PI_2,
+                dead_moisture_log_sd: 0.05,
+            }
+        );
+    }
+
+    #[test]
+    fn bad_calibration_values_are_rejected() {
+        let mut cases = vec![
+            (
+                "sm-neg".to_string(),
+                "spread_multiplier = -1.0\n".to_string(),
+                "spread_multiplier is -1".to_string(),
+            ),
+            (
+                "sm-nan".to_string(),
+                "spread_multiplier = nan\n".to_string(),
+                "spread_multiplier is NaN".to_string(),
+            ),
+            (
+                "by-neg".to_string(),
+                "[spread_multiplier_by_model]\nGR2 = -0.5\n".to_string(),
+                "spread_multiplier_by_model.GR2 is -0.5".to_string(),
+            ),
+            (
+                "by-nan".to_string(),
+                "[spread_multiplier_by_model]\nGR2 = nan\n".to_string(),
+                "spread_multiplier_by_model.GR2 is NaN".to_string(),
+            ),
+            (
+                "by-unknown".to_string(),
+                "[spread_multiplier_by_model]\nGR10 = 2.0\n".to_string(),
+                "spread_multiplier_by_model.GR10 names no burnable".to_string(),
+            ),
+            (
+                "pert-unknown".to_string(),
+                "[perturbation]\nwind_sd = 0.2\n".to_string(),
+                "unknown field `wind_sd`".to_string(),
+            ),
+        ];
+        for key in [
+            "ignition_radius_m",
+            "wind_speed_sd",
+            "wind_direction_sd_deg",
+            "dead_moisture_log_sd",
+        ] {
+            for (tag, value, shown) in [("neg", "-1.0", "-1"), ("nan", "nan", "NaN")] {
+                cases.push((
+                    format!("pert-{key}-{tag}"),
+                    format!("[perturbation]\n{key} = {value}\n"),
+                    format!("perturbation.{key} is {shown}"),
+                ));
+            }
+        }
+        for (name, text, needle) in cases {
+            let err = match RunSettings::load(Some(&write(&name, &text))) {
+                Ok(got) => panic!("{name}: read {got:?}"),
+                Err(err) => format!("{err:#}"),
+            };
+            assert!(err.contains(&needle), "{name}: {err}");
+        }
     }
 
     fn night(name: &str, table: &str) -> Result<NightMoisture> {

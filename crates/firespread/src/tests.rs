@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use firespread_agents::{EnsembleSpec, ForecastConfig, GridInputs, Source};
 use firespread_ensemble::{
-    DeadFuelMoisture, HourFields, HourlyConfig, HourlyPerturbation, RawHour, WindowWeather,
+    BURNABLE_FBFM40, DeadFuelMoisture, HourFields, HourlyConfig, HourlyPerturbation, RawHour,
+    WindowWeather,
 };
 use firespread_grid::{
     ForecastWindow, Grid, GridHeader, MANIFEST_VERSION, Manifest, WindLimitPolicy, write_cog,
@@ -15,10 +16,11 @@ use firespread_metrics::Mask;
 use serde_json::Value;
 
 use crate::ensemble::{
-    MEMBERS_FILE, MemberArea, MembersFile, RUN_CONFIG_FILE, forecast, hourly_config, write_json,
+    MEMBERS_FILE, MemberArea, MembersFile, RUN_CONFIG_FILE, ensemble_spec, forecast, hourly_config,
+    write_json,
 };
 use crate::score::{Observations, ScoreOptions, score_run};
-use crate::settings::{NightMoistureSettings, RunSettings, Scenario};
+use crate::settings::{NightMoistureSettings, PerturbationSettings, RunSettings, Scenario};
 use crate::timefmt::parse_hour;
 
 const DX: f64 = 30.0;
@@ -420,10 +422,8 @@ async fn run_with(runs_dir: &Path, settings: &RunSettings) -> (Value, Value) {
         window: window(),
         hourly: hourly_config(settings).unwrap(),
         ensemble: EnsembleSpec {
-            seed: 7,
-            members: 24,
             horizons_h: vec![1, 2],
-            perturbation: HourlyPerturbation::default(),
+            ..ensemble_spec(settings, 7, 24)
         },
         threads: 3,
     };
@@ -476,4 +476,150 @@ async fn night_moisture_reaches_the_run_and_its_config() {
     );
     let _ = std::fs::remove_dir_all(off_dir);
     let _ = std::fs::remove_dir_all(on_dir);
+}
+
+#[test]
+fn hourly_config_puts_each_override_at_its_model_index() {
+    let settings = RunSettings {
+        spread_multiplier: 1.5,
+        spread_multiplier_by_model: BTreeMap::from([
+            ("GR2".to_string(), 2.0),
+            ("TL3".to_string(), 0.25),
+        ]),
+        ..RunSettings::default()
+    };
+    let got = hourly_config(&settings).unwrap().spread_multiplier;
+    for (i, &(_, model)) in BURNABLE_FBFM40.iter().enumerate() {
+        let want = match model {
+            "GR2" => 2.0,
+            "TL3" => 0.25,
+            _ => 1.5,
+        };
+        assert_eq!(
+            got[i], want,
+            "index {i} ({model}): got {}, expected {want}; all: {got:?}",
+            got[i]
+        );
+    }
+    assert_eq!(
+        hourly_config(&RunSettings::default()).unwrap(),
+        HourlyConfig::default(),
+        "default settings changed the hourly configuration"
+    );
+}
+
+#[test]
+fn ensemble_spec_carries_the_perturbation_table() {
+    let settings = RunSettings {
+        perturbation: PerturbationSettings {
+            ignition_radius_m: 100.0,
+            wind_speed_sd: 0.3,
+            wind_direction_sd_deg: 30.0,
+            dead_moisture_log_sd: 0.05,
+        },
+        ..RunSettings::default()
+    };
+    let got = ensemble_spec(&settings, 7, 24).perturbation;
+    assert_eq!(
+        got,
+        HourlyPerturbation {
+            ignition_radius_m: 100.0,
+            wind_speed_sd: 0.3,
+            wind_direction_sd_rad: 30_f64.to_radians(),
+            dead_moisture_log_sd: 0.05,
+        },
+        "perturbation of the spec: {got:?}"
+    );
+    assert_eq!(
+        ensemble_spec(&RunSettings::default(), 7, 24).perturbation,
+        HourlyPerturbation::default()
+    );
+}
+
+fn burned_at_last_horizon(members: &Value) -> u64 {
+    members["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            m["burned_cells"]
+                .as_array()
+                .unwrap()
+                .last()
+                .unwrap()
+                .as_u64()
+                .unwrap()
+        })
+        .sum()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn calibration_settings_reach_the_run_and_its_config() {
+    let dirs = [scratch("calib-1"), scratch("calib-2"), scratch("calib-by")];
+    let doubled = RunSettings {
+        spread_multiplier: 2.0,
+        ..RunSettings::default()
+    };
+    let by_model = RunSettings {
+        spread_multiplier_by_model: BTreeMap::from([("GR2".to_string(), 2.0)]),
+        perturbation: PerturbationSettings {
+            wind_speed_sd: 0.3,
+            ..PerturbationSettings::default()
+        },
+        ..RunSettings::default()
+    };
+    let (config_1, members_1) = run_with(&dirs[0], &RunSettings::default()).await;
+    let (config_2, members_2) = run_with(&dirs[1], &doubled).await;
+    let (config_by, _) = run_with(&dirs[2], &by_model).await;
+
+    let (burned_1, burned_2) = (
+        burned_at_last_horizon(&members_1),
+        burned_at_last_horizon(&members_2),
+    );
+    assert!(
+        burned_2 > burned_1,
+        "spread_multiplier 2 burned {burned_2} member-cells at 2 h, 1 burned {burned_1}"
+    );
+
+    for key in [
+        "spread_multiplier",
+        "spread_multiplier_by_model",
+        "perturbation",
+    ] {
+        assert!(
+            config_1.get(key).is_none(),
+            "default run_config.json holds {key}: {config_1}"
+        );
+    }
+    assert_eq!(
+        config_2["spread_multiplier"], 2.0,
+        "doubled run_config.json: {config_2}"
+    );
+    assert!(
+        config_2.get("perturbation").is_none()
+            && config_2.get("spread_multiplier_by_model").is_none(),
+        "doubled run_config.json: {config_2}"
+    );
+    assert!(
+        config_by.get("spread_multiplier").is_none(),
+        "by-model run_config.json: {config_by}"
+    );
+    assert_eq!(
+        config_by["spread_multiplier_by_model"],
+        serde_json::json!({"GR2": 2.0}),
+        "by-model run_config.json: {config_by}"
+    );
+    assert_eq!(
+        config_by["perturbation"],
+        serde_json::json!({
+            "ignition_radius_m": 375.0,
+            "wind_speed_sd": 0.3,
+            "wind_direction_sd_deg": 15.0,
+            "dead_moisture_log_sd": 0.1,
+        }),
+        "by-model run_config.json: {config_by}"
+    );
+    for dir in dirs {
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
