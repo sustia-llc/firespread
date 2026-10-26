@@ -321,6 +321,42 @@ The page shows:
 Each item has a short help text. Hover over it, tap it or select it with the
 keyboard to see the text.
 
+## FireBench bundle
+
+The module `python/firebench_case/bundle.py` packages the case in the
+FireBench standard format v1.0, the format of FireBench's Caldor case. Run it
+from the `firespread` venv after you score the three runs:
+
+```
+PYTHONPATH=python python -m firebench_case.bundle \
+  --runs data/runs/s4-calib --data data --out data/firebench/hermits_peak
+PYTHONPATH=python python -m firebench_case.check \
+  --bundle data/firebench/hermits_peak --runs data/runs/s4-calib --data data
+```
+
+The bundle holds three HDF5 files, and each polygon entry points to a KML file
+in the same folder:
+
+| File | Polygons | Grids in `spatial_2d` |
+|---|---|---|
+| `observations.h5` | FEDS perimeters at the start and end of w1, w2 and w3 | FEDS end masks |
+| `firespread.h5` | Forecast area, burn probability 0.5 or more, at each window end | Burn probability at each forecast hour |
+| `persistence.h5` | Persistence baseline at each window end | none |
+
+The uniform growth baseline is not in the bundle. Each file passes FireBench's
+`validate_h5_std`, `validate_h5_referenced_files` and `validate_h5_requirement`.
+The `check` module prints FireBench's polygon Jaccard next to the raster
+Jaccard of each scorecard. On 2026-10-26 the two differed by 0.0003 at most:
+
+| Window | Entrant | Polygon Jaccard | Raster Jaccard |
+|---|---|---|---|
+| w1 | firespread | 0.4085 | 0.4084 |
+| w1 | persistence | 0.4155 | 0.4155 |
+| w2 | firespread | 0.7351 | 0.7349 |
+| w2 | persistence | 0.8209 | 0.8209 |
+| w3 | firespread | 0.6792 | 0.6789 |
+| w3 | persistence | 0.8941 | 0.8941 |
+
 ## Tests
 
 ```

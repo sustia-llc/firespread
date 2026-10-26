@@ -218,11 +218,18 @@ The suite checks the spread model against FireBench and pyretechnics
 reference values. It also checks that the same seed gives byte-identical
 scorecards.
 
+### The FireBench bundle
+
+The case is packaged in the FireBench standard format, so another model can
+be scored on the same perimeters. The README, "FireBench bundle", gives the
+commands. Show that the three files pass FireBench's validators, and that
+FireBench's polygon Jaccard agrees with the scorecard within 0.0003.
+
 ## 6. Not built yet
 
 These items are on the roadmap and are not in the demo:
 
-- The FireBench HDF5 package of the case.
+- The uniform growth baseline in the FireBench bundle.
 - Crown fire.
 - Lean proofs (Phase 5a, after the hackathon). The first proofs cover the
   metrics: Jaccard and Dice lie in [0, 1], and Dice equals 2J / (1 + J). Later
