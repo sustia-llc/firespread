@@ -1,20 +1,16 @@
 #![forbid(unsafe_code)]
-//! Ensembles of spread runs over perturbed inputs.
+//! Ensembles of spread runs over perturbed inputs: static per-cell
+//! [`Inputs`], one member's fields and spread window ([`run_member`]), and
+//! seeded parallel ensembles of burn counts ([`run_ensemble`]).
 
-/// Errors raised while building or running an ensemble.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum EnsembleError {
-    /// The ensemble has no members.
-    #[error("ensemble has no members")]
-    Empty,
-    /// A member failed; `member` is its zero-based index.
-    #[error("ensemble member {member} of {members} failed: {reason}")]
-    MemberFailed {
-        member: usize,
-        members: usize,
-        reason: String,
-    },
-}
+mod ensemble;
+mod error;
+mod fbfm40;
+mod inputs;
+mod member;
 
-pub type Result<T> = core::result::Result<T, EnsembleError>;
+pub use ensemble::{Counts, MemberSummary, Perturbation, run_ensemble};
+pub use error::{EnsembleError, Result};
+pub use fbfm40::{BURNABLE_FBFM40, Fbfm40, classify_fbfm40};
+pub use inputs::{Inputs, Layers};
+pub use member::{MemberBuffers, MemberParams, run_member};

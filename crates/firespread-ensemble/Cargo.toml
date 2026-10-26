@@ -9,4 +9,15 @@ description = "Ensembles of spread runs over perturbed inputs"
 doctest = false
 
 [dependencies]
+firespread-fuel.workspace = true
+firespread-grid.workspace = true
+firespread-rothermel.workspace = true
+firespread-spread.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rand_distr.workspace = true
+rayon.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+anyhow = "1"
