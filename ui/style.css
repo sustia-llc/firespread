@@ -1,9 +1,39 @@
+/* Tokens from the diagram-design profile `firespread` (Topo sheet). */
 :root {
-  --paper: #f7f5f0;
-  --ink: #1d1d1b;
-  --muted: #7a776f;
-  --hairline: #d6d2c8;
-  --accent: #c2410c;
+  --paper: #eef0eb;
+  --paper-2: #e3e6df;
+  --ink: #1f2924;
+  --muted: #4d5a52;
+  --soft: #56635b;
+  --hairline: #b9c0b6;
+  --accent: #a8380b;
+  --link: #2a5a86;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1c2420;
+    --paper-2: #253029;
+    --ink: #e8ece6;
+    --muted: #b3bdb4;
+    --soft: #98a59c;
+    --hairline: rgba(185, 192, 182, 0.28);
+    --accent: #f0874d;
+    --link: #7eaedb;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #1c2420;
+  --paper-2: #253029;
+  --ink: #e8ece6;
+  --muted: #b3bdb4;
+  --soft: #98a59c;
+  --hairline: rgba(185, 192, 182, 0.28);
+  --accent: #f0874d;
+  --link: #7eaedb;
+  color-scheme: dark;
 }
 
 * {
