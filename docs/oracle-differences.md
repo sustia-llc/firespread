@@ -30,7 +30,7 @@ The relative error is (engine − oracle) / oracle.
 | slope only | 480 | −4.6e-4 | 2.0e-2 (SH1) |
 | wind and slope | 1920 | −1.26e-1 | 4.1e-1 (TU4, D1, 15 m/s, 100 %) |
 
-With wind alone or slope alone, every model except SH1 agrees within 4.7e-3. With wind and slope together, the engine is lower than pyretechnics in all 1920 cases. The engine computes R = R0 (1 + φw + φs), Rothermel 1972 eq. 52. Take GR1 at D1, 15 m/s and 100 % slope. There, R0 = 4.6025e-3 m/s, φw = 451.04 and φs = 37.60, so R = 2.2536 m/s. pyretechnics gives 3.7335 m/s for the same case. FireBench passes the 1 % gate on the single-class cases that combine wind and slope.
+With wind alone or slope alone, every model except SH1 agrees within 4.7e-3. With wind and slope together, the engine is lower than pyretechnics in all 1920 cases. The `oracle_differences` example prints this count after the split table. The engine computes R = R0 (1 + φw + φs), Rothermel 1972 eq. 52. Take GR1 at D1, 15 m/s and 100 % slope. There, R0 = 4.6025e-3 m/s, φw = 451.04 and φs = 37.60, so R = 2.2536 m/s. pyretechnics gives 3.7335 m/s for the same case. FireBench passes the 1 % gate on the single-class cases that combine wind and slope.
 
 ## Multi-class engine against FireBench (documented)
 

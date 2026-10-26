@@ -386,6 +386,20 @@ fn main() -> Result<()> {
     }
     println!("{}", split_row("all", &all.pyre));
     println!();
+    let [_, _, (_, both)] = SPLITS;
+    let (above, below): (Vec<&Rel>, Vec<&Rel>) = all
+        .pyre
+        .iter()
+        .filter(|r| both(r))
+        .partition(|r| r.rel >= 0.0);
+    let n_both = above.len() + below.len();
+    println!(
+        "Both (wind and slope): engine >= oracle in {} of {n_both} cases; engine < oracle in {} \
+         of {n_both} cases.",
+        above.len(),
+        below.len()
+    );
+    println!();
     println!("## GR1, D1: every case");
     println!();
     println!(
