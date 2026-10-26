@@ -17,6 +17,7 @@ from .paths import EXTENT_JSON, GRIDMET_DIR, WINDOWS_JSON
 
 PRODUCTS = ("fm100", "fm1000")
 SCALE = 0.1
+PAD_CELLS = 2
 EPOCH = dt.date(1900, 1, 1)
 
 
@@ -69,7 +70,8 @@ def slice_product(product: str, dates: list[dt.date], bbox_4326: list[float]) ->
             print(f"WARNING {product}: file scale {src.scales[0]} differs from {SCALE}")
         res_x, res_y = src.res
         w, s, e, n = bbox_4326
-        win = from_bounds(w - res_x, s - res_y, e + res_x, n + res_y, src.transform).round_offsets().round_lengths()
+        pad_x, pad_y = PAD_CELLS * res_x, PAD_CELLS * res_y
+        win = from_bounds(w - pad_x, s - pad_y, e + pad_x, n + pad_y, src.transform).round_offsets().round_lengths()
         transform = src.window_transform(win)
         for date in dates:
             band = band_for_date(src, date)

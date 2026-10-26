@@ -42,11 +42,12 @@ new-fire-pixel file has no per-detection timestamp.
 
 Runs over every hour in `data/windows.json`. For each hour it fetches the
 `.idx` inventory of `hrrr.YYYYMMDD/conus/hrrr.tHHz.wrfsfcf00.grib2` from the
-NOAA S3 bucket. It locates five records by their `VAR:LEVEL` strings: TMP 2 m,
-RH 2 m, UGRD 10 m, VGRD 10 m and GUST surface. It fetches each record with one
-HTTP Range request. It writes `data/hrrr/hrrr.YYYYMMDD.tHHz.f00.<tag>.grib2`.
-Existing files are kept. A record number that differs from the NCEP inventory
-(71, 75, 77, 78, 9) is logged. At the end it opens one fragment with rasterio
+NOAA S3 bucket. It locates six records by their `VAR:LEVEL` strings: TMP 2 m,
+RH 2 m, UGRD 10 m, VGRD 10 m, GUST surface and TCDC entire atmosphere. It
+fetches each record with one HTTP Range request. It writes
+`data/hrrr/hrrr.YYYYMMDD.tHHz.f00.<tag>.grib2`. Existing files are kept. A
+record number that differs from the NCEP inventory (71, 75, 77, 78, 9, 116)
+is logged. At the end it opens one fragment with rasterio
 and prints its CRS and shape.
 
 ## gridmet_slice

@@ -1,4 +1,4 @@
-"""Fetch five HRRR surface analysis records per window hour by HTTP Range from the NOAA S3 bucket."""
+"""Fetch six HRRR surface analysis records per window hour by HTTP Range from the NOAA S3 bucket."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ RECORDS = (
     ("UGRD10m", "UGRD", "10 m above ground", 77),
     ("VGRD10m", "VGRD", "10 m above ground", 78),
     ("GUST", "GUST", "surface", 9),
+    ("TCDC", "TCDC", "entire atmosphere", 116),
 )
 
 

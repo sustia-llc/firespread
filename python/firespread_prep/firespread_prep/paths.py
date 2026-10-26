@@ -14,6 +14,7 @@ HRRR_DIR = DATA_DIR / "hrrr"
 GRIDMET_DIR = DATA_DIR / "gridmet"
 LANDFIRE_DIR = DATA_DIR / "landfire"
 GRID_DIR = DATA_DIR / "grid"
+WEATHER_DIR = DATA_DIR / "weather"
 
 EXTENT_JSON = DATA_DIR / "extent.json"
 WINDOWS_JSON = DATA_DIR / "windows.json"
