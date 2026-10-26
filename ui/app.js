@@ -23,7 +23,7 @@
   var SVG_NS = "http://www.w3.org/2000/svg";
 
   // Popup text per `data-help` key. `{brier_radius}` is the Brier domain
-  // radius of the run's scorecard.
+  // radius of the run's scorecard; `{horizon}` is its scored horizon.
   var HELP = {
     // Entrants
     firespread: "Our forecast. A cell counts as burned when at least half of the ensemble runs burn it by that hour.",
@@ -42,16 +42,20 @@
     areaChart: "The burned area of the ensemble runs by hour. The band holds the middle 80 % of runs, the line is the median, and the dots are the observed areas at the window start and end.",
     layerProbability: "Burn probability at the selected hour.",
     layerObserved: "The observed fire perimeter at the end of the window, from NASA FEDS satellite data.",
+    layerConfusion: "Forecast against observed at h+{horizon}. Green is a hit: the forecast and FEDS both burned. Orange is a miss: FEDS burned and the forecast did not. Purple is a false alarm: the forecast burned and FEDS did not. The forecast is the cells with burn probability 0.5 or more.",
     layerHillshade: "Shaded terrain relief.",
     layerVector: "Roads, places and water. This layer shows only when the basemap file is present.",
   };
 
   var statusEl = document.getElementById("status");
   var brierRadius = "the scoring radius";
+  var confusionHorizon = "N";
 
   function helpText(key) {
     var t = HELP[key];
-    return t === undefined ? null : t.replace("{brier_radius}", brierRadius);
+    return t === undefined
+      ? null
+      : t.replace("{brier_radius}", brierRadius).replace("{horizon}", confusionHorizon);
   }
 
   // Shows the text of the nearest `[data-help]` ancestor on hover, keyboard
@@ -283,6 +287,45 @@
     var layer = L.layerGroup([casing, stroke]);
     layer.addTo(map);
     layers.addOverlay(layer, layerName("Observed perimeter", "layerObserved"));
+  }
+
+  // Confusion codes of `run/confusion_h<N>.tif`, N the scorecard's horizon:
+  // 1 hit, 2 miss, 3 false alarm; 0 and nodata are transparent. Off by default.
+  async function addConfusion(map, layers) {
+    var card = await fetchOrNull("run/scorecard.json", "json");
+    var row = card && Array.isArray(card.rows) ? card.rows.filter(isFeds)[0] : undefined;
+    if (!row || row.horizon_h === undefined) {
+      console.info("[firespread] no scored horizon; confusion map skipped");
+      return;
+    }
+    var url = "run/confusion_h" + row.horizon_h + ".tif";
+    var g;
+    try {
+      g = await loadGeoraster(url);
+    } catch (e) {
+      console.info("[firespread] confusion map skipped: " + e.message);
+      return;
+    }
+    confusionHorizon = String(row.horizon_h);
+    var css = getComputedStyle(document.documentElement);
+    var colors = [
+      null,
+      css.getPropertyValue("--confusion-hit").trim(),
+      css.getPropertyValue("--confusion-miss").trim(),
+      css.getPropertyValue("--confusion-false-alarm").trim(),
+    ];
+    var nodata = g.noDataValue;
+    var layer = new GeoRasterLayer({
+      georaster: g,
+      opacity: OVERLAY_OPACITY,
+      resolution: 128,
+      pixelValuesToColorFn: function (values) {
+        var v = values[0];
+        if (v === nodata) return null;
+        return colors[v] || null;
+      },
+    });
+    layers.addOverlay(layer, layerName("Confusion map", "layerConfusion"));
   }
 
   async function addProbability(map, layers, manifest) {
@@ -618,6 +661,7 @@
     }
     await addProbability(map, layers, manifest);
     await addObserved(map, layers);
+    await addConfusion(map, layers);
     await panels;
     setStatus("ready");
     document.body.setAttribute("data-ready", "1");

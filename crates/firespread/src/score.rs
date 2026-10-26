@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 use firespread_ensemble::{Fbfm40, classify_fbfm40};
-use firespread_grid::{GridHeader, Manifest, read_geotiff, read_geotiff_u8};
+use firespread_grid::{
+    GridHeader, Manifest, MaskGrid, read_geotiff, read_geotiff_u8, write_cog_u8,
+};
 use firespread_metrics::{
     Mask, MetricsError, ProbabilityGrid, brier, dice, fit_uniform_growth_radius, jaccard,
     persistence, precision, recall, uniform_growth,
@@ -24,6 +26,17 @@ pub const FIT_LAG_H: i64 = 12;
 pub const FIT_TOLERANCE_M: f64 = 1.0;
 /// Default radius of the Brier domain around the start perimeter, m.
 pub const DEFAULT_BRIER_RADIUS_M: f64 = 5000.0;
+
+/// Confusion code of a cell in neither the forecast nor the target mask.
+pub const CONFUSION_NONE: u8 = 0;
+/// Confusion code of a cell in both masks.
+pub const CONFUSION_HIT: u8 = 1;
+/// Confusion code of a cell in the target mask only.
+pub const CONFUSION_MISS: u8 = 2;
+/// Confusion code of a cell in the forecast mask only.
+pub const CONFUSION_FALSE_ALARM: u8 = 3;
+/// GDAL_NODATA of `confusion_h<N>.tif`; no cell carries it.
+pub const CONFUSION_NODATA: f32 = 255.0;
 
 const ENTRANTS: [&str; 3] = ["firespread", "persistence", "uniform_growth"];
 
@@ -237,6 +250,31 @@ fn optional(r: firespread_metrics::Result<f64>) -> Result<Option<f64>> {
     }
 }
 
+/// The confusion code of each cell of `forecast` against `target`, row-major:
+/// [`CONFUSION_NONE`], [`CONFUSION_HIT`], [`CONFUSION_MISS`] or
+/// [`CONFUSION_FALSE_ALARM`]. Fails when the masks differ in shape.
+pub fn confusion_codes(forecast: &Mask, target: &Mask) -> Result<Vec<u8>> {
+    ensure!(
+        forecast.rows() == target.rows() && forecast.cols() == target.cols(),
+        "forecast mask is {} x {}, target mask is {} x {}",
+        forecast.rows(),
+        forecast.cols(),
+        target.rows(),
+        target.cols()
+    );
+    Ok(forecast
+        .cells()
+        .iter()
+        .zip(target.cells())
+        .map(|(&f, &t)| match (f, t) {
+            (false, false) => CONFUSION_NONE,
+            (true, true) => CONFUSION_HIT,
+            (false, true) => CONFUSION_MISS,
+            (true, false) => CONFUSION_FALSE_ALARM,
+        })
+        .collect())
+}
+
 fn probability_of(mask: &Mask) -> Result<ProbabilityGrid> {
     Ok(ProbabilityGrid::new(
         mask.rows(),
@@ -249,8 +287,8 @@ fn probability_of(mask: &Mask) -> Result<ProbabilityGrid> {
 }
 
 /// Scores the run in `run_dir` against `obs` and writes `scorecard.json`,
-/// `area_by_hour.json` and, when `obs.observed_geojson` is set, a copy of it
-/// as `observed.geojson` into `run_dir`.
+/// `area_by_hour.json`, `confusion_h<N>.tif` and, when `obs.observed_geojson`
+/// is set, a copy of it as `observed.geojson` into `run_dir`.
 ///
 /// The scored horizon is the target label minus the start label, which must
 /// be one of the manifest's horizons. Entrants at that horizon, against the
@@ -262,7 +300,9 @@ fn probability_of(mask: &Mask) -> Result<ProbabilityGrid> {
 /// The Brier domain is the burnable cells within `opts.brier_radius_m` of
 /// the start mask. Each entrant also gets a `wfigs_final` row with only
 /// `precision`: its forecast cells inside the WFIGS final perimeter over its
-/// forecast cells.
+/// forecast cells. `confusion_h<N>.tif` is a `u8` GeoTIFF on the run's grid
+/// with GDAL_NODATA [`CONFUSION_NODATA`], holding [`confusion_codes`] of the
+/// `firespread` forecast mask against the FEDS target mask.
 pub fn score_run(run_dir: &Path, obs: &Observations, opts: &ScoreOptions) -> Result<ScoreOutputs> {
     let manifest = Manifest::read(run_dir.join("manifest.json"))?;
     let header = manifest.grid;
@@ -455,6 +495,17 @@ pub fn score_run(run_dir: &Path, obs: &Observations, opts: &ScoreOptions) -> Res
     ];
     write_json(&files[0], &scorecard)?;
     write_json(&files[1], &area)?;
+    let confusion_path = run_dir.join(format!("confusion_h{horizon}.tif"));
+    let confusion = MaskGrid::new(
+        GridHeader {
+            nodata: CONFUSION_NODATA,
+            ..header
+        },
+        confusion_codes(&forecast, &obs.target)?,
+    )?;
+    write_cog_u8(&confusion_path, &confusion)
+        .with_context(|| format!("writing {}", confusion_path.display()))?;
+    files.push(confusion_path);
     if let Some(src) = &obs.observed_geojson {
         let dst = run_dir.join("observed.geojson");
         std::fs::copy(src, &dst)

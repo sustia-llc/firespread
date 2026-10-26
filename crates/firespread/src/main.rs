@@ -54,7 +54,8 @@ enum Command {
         #[arg(long)]
         config: Option<PathBuf>,
     },
-    /// Score a run: `scorecard.json`, `area_by_hour.json`, `observed.geojson`.
+    /// Score a run: `scorecard.json`, `area_by_hour.json`, `confusion_h<N>.tif`,
+    /// `observed.geojson`.
     Score {
         /// Run directory written by `ensemble`.
         #[arg(long)]

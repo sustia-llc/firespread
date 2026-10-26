@@ -10,7 +10,8 @@ use firespread_ensemble::{
     WindowWeather,
 };
 use firespread_grid::{
-    ForecastWindow, Grid, GridHeader, MANIFEST_VERSION, Manifest, WindLimitPolicy, write_cog,
+    ForecastWindow, Grid, GridHeader, MANIFEST_VERSION, Manifest, WindLimitPolicy, read_geotiff_u8,
+    write_cog,
 };
 use firespread_metrics::Mask;
 use serde_json::Value;
@@ -19,7 +20,10 @@ use crate::ensemble::{
     MEMBERS_FILE, MemberArea, MembersFile, RUN_CONFIG_FILE, ensemble_spec, forecast, hourly_config,
     write_json,
 };
-use crate::score::{Observations, ScoreOptions, score_run};
+use crate::score::{
+    CONFUSION_FALSE_ALARM, CONFUSION_HIT, CONFUSION_MISS, CONFUSION_NONE, Observations,
+    ScoreOptions, confusion_codes, score_run,
+};
 use crate::settings::{NightMoistureSettings, PerturbationSettings, RunSettings, Scenario};
 use crate::timefmt::parse_hour;
 
@@ -249,6 +253,59 @@ fn scorecard_matches_hand_values() {
             {"t": "2022-04-23T00:00:00Z", "area_km2": 0.0027}
         ])
     );
+}
+
+#[test]
+fn confusion_codes_label_every_cell() {
+    // 2 x 3: forecast {0, 1, 4}, target {0, 2, 5}.
+    let forecast = mask(3, 2, &[1, 1, 0, 0, 1, 0]);
+    let target = mask(3, 2, &[1, 0, 1, 0, 0, 1]);
+    let got = confusion_codes(&forecast, &target).unwrap();
+    let want = [
+        CONFUSION_HIT,
+        CONFUSION_FALSE_ALARM,
+        CONFUSION_MISS,
+        CONFUSION_NONE,
+        CONFUSION_FALSE_ALARM,
+        CONFUSION_MISS,
+    ];
+    assert_eq!(want, [1, 3, 2, 0, 3, 2], "code constants changed");
+    assert_eq!(got, want, "codes: got {got:?}, expected {want:?}");
+    let e = confusion_codes(&forecast, &mask(2, 3, &[0; 6])).unwrap_err();
+    assert!(
+        e.to_string().contains("target mask is 3 x 2"),
+        "shape mismatch error: {e}"
+    );
+}
+
+#[test]
+fn score_run_writes_the_confusion_map() {
+    let dir = scratch("confusion");
+    hand_run(&dir);
+    let opts = ScoreOptions {
+        uniform_rate_m_per_h: Some(5.0),
+        brier_radius_m: 60.0,
+    };
+    let out = score_run(&dir, &hand_observations(), &opts).unwrap();
+    let path = dir.join("confusion_h12.tif");
+    assert!(
+        out.files.contains(&path),
+        "{} not among the written files {:?}",
+        path.display(),
+        out.files
+    );
+    let grid = read_geotiff_u8(&path).unwrap();
+    let want_header = GridHeader {
+        nodata: 255.0,
+        ..header(6, 1)
+    };
+    assert!(
+        grid.header.same_grid(&want_header),
+        "header: got {:?}, expected {want_header:?}",
+        grid.header
+    );
+    // Forecast p >= 0.5: {1, 2, 4}; target {1, 2, 3}.
+    assert_eq!(grid.data, [0, 1, 1, 2, 3, 0], "confusion cells");
 }
 
 #[test]

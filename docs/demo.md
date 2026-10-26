@@ -93,14 +93,18 @@ The box is the run grid from `data/extent.json`. The extract is about 3.4 MB.
 1. Move the hour slider from h+1 to h+12. The colored area grows from the start
    perimeter. The start perimeter stays dark red, because every member burns it.
 2. Turn the map layers on and off: burn probability, observed perimeter,
-   hillshade and street basemap.
-3. Change the scorecard metric: Jaccard, Dice, precision, recall and Brier.
+   confusion map, hillshade and street basemap.
+3. Turn on the confusion map. It shows where the forecast was right and
+   wrong at the scored hour: green hits, orange misses and purple false
+   alarms. Runs scored before this layer existed have no confusion file.
+   To add it, run `firespread score` on the run again.
+4. Change the scorecard metric: Jaccard, Dice, precision, recall and Brier.
    The chart compares firespread with persistence and uniform growth.
-4. Point to the WFIGS table: the share of each forecast inside the official
+5. Point to the WFIGS table: the share of each forecast inside the official
    final perimeter.
-5. Point to the burned area chart: the ensemble band and median against the
+6. Point to the burned area chart: the ensemble band and median against the
    two observed areas.
-6. Hover over or tap any "?" button, entrant name, layer name or the slider. A
+7. Hover over or tap any "?" button, entrant name, layer name or the slider. A
    short help text explains the item.
 
 ### A live forecast

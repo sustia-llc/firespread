@@ -25,7 +25,7 @@ pub(crate) const COMPRESSION_NONE: u16 = 1;
 pub(crate) const COMPRESSION_DEFLATE: u16 = 8;
 const COMPRESSION_OLD_DEFLATE: u16 = 32946;
 pub(crate) const SAMPLE_FORMAT_IEEE_FP: u16 = 3;
-const SAMPLE_FORMAT_UINT: u16 = 1;
+pub(crate) const SAMPLE_FORMAT_UINT: u16 = 1;
 
 type TiffDecoder = Decoder<BufReader<File>>;
 

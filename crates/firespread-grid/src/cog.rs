@@ -1,4 +1,4 @@
-//! Tiled, Deflate-compressed single-band `f32` GeoTIFF writer.
+//! Tiled, Deflate-compressed single-band `f32` and `u8` GeoTIFF writers.
 //!
 //! The file is a classic little-endian TIFF: the 8-byte header, one IFD at
 //! offset 8, the out-of-line tag values, then every tile in row-major order.
@@ -11,13 +11,40 @@ use flate2::write::ZlibEncoder;
 
 use crate::geotiff::{
     COMPRESSION_DEFLATE, KEY_GT_MODEL_TYPE, KEY_GT_RASTER_TYPE, KEY_PROJECTED_CS_TYPE,
-    MODEL_TYPE_PROJECTED, RASTER_PIXEL_IS_AREA, SAMPLE_FORMAT_IEEE_FP, TAG_GDAL_NODATA,
-    TAG_GEO_KEY_DIRECTORY, TAG_MODEL_PIXEL_SCALE, TAG_MODEL_TIEPOINT,
+    MODEL_TYPE_PROJECTED, RASTER_PIXEL_IS_AREA, SAMPLE_FORMAT_IEEE_FP, SAMPLE_FORMAT_UINT,
+    TAG_GDAL_NODATA, TAG_GEO_KEY_DIRECTORY, TAG_MODEL_PIXEL_SCALE, TAG_MODEL_TIEPOINT,
 };
-use crate::{Grid, GridError, Result, check_data_len};
+use crate::{Grid, GridError, GridHeader, MaskGrid, Result, check_data_len};
 
-/// Tile width and height, in cells, of every file [`write_cog`] produces.
+/// Tile width and height, in cells, of every file [`write_cog`] and
+/// [`write_cog_u8`] produce.
 pub const TILE_SIZE: usize = 256;
+
+/// A cell type the writer encodes as little-endian sample bytes.
+trait CogSample: Copy {
+    /// TIFF BitsPerSample of this type.
+    const BITS: u16;
+    /// TIFF SampleFormat of this type.
+    const FORMAT: u16;
+    /// Appends the little-endian bytes of `self` to `out`.
+    fn put(self, out: &mut Vec<u8>);
+}
+
+impl CogSample for f32 {
+    const BITS: u16 = 32;
+    const FORMAT: u16 = SAMPLE_FORMAT_IEEE_FP;
+    fn put(self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.to_le_bytes());
+    }
+}
+
+impl CogSample for u8 {
+    const BITS: u16 = 8;
+    const FORMAT: u16 = SAMPLE_FORMAT_UINT;
+    fn put(self, out: &mut Vec<u8>) {
+        out.push(self);
+    }
+}
 
 const TYPE_ASCII: u16 = 2;
 const TYPE_SHORT: u16 = 3;
@@ -36,7 +63,29 @@ const TILE_OFFSETS_INDEX: usize = 10;
 /// the file would exceed 4 GiB.
 pub fn write_cog(path: impl AsRef<Path>, grid: &Grid) -> Result<()> {
     let path = path.as_ref();
-    let bytes = encode(path, grid)?;
+    let bytes = encode(path, &grid.header, &grid.data, grid.header.nodata)?;
+    write_file(path, bytes)
+}
+
+/// Writes `grid` as a single-band 8-bit unsigned GeoTIFF (SampleFormat 1)
+/// with 256 by 256 Deflate tiles.
+///
+/// The layout, georeferencing tags and GDAL_NODATA are those of
+/// [`write_cog`]; edge tiles are padded with `nodata` as a `u8`. Fails on the
+/// inputs [`write_cog`] fails on, and when the header's `nodata` is not an
+/// integer in 0..=255.
+pub fn write_cog_u8(path: impl AsRef<Path>, grid: &MaskGrid) -> Result<()> {
+    let path = path.as_ref();
+    let nodata = grid.header.nodata;
+    if !(nodata.fract() == 0.0 && (0.0..=255.0).contains(&nodata)) {
+        return Err(GridError::NodataNotU8 { nodata });
+    }
+    // `as u8` is exact: `nodata` is integral and inside 0..=255.
+    let bytes = encode(path, &grid.header, &grid.data, nodata as u8)?;
+    write_file(path, bytes)
+}
+
+fn write_file(path: &Path, bytes: Vec<u8>) -> Result<()> {
     std::fs::write(path, bytes).map_err(|source| GridError::Io {
         path: path.to_path_buf(),
         source,
@@ -90,8 +139,7 @@ impl Entry {
     }
 }
 
-fn validate(grid: &Grid) -> Result<(u32, u32, u16)> {
-    let h = &grid.header;
+fn validate(h: &GridHeader, cells: usize) -> Result<(u32, u32, u16)> {
     let dim = |field: &'static str, n: usize| -> Result<u32> {
         u32::try_from(n)
             .ok()
@@ -114,17 +162,21 @@ fn validate(grid: &Grid) -> Result<(u32, u32, u16)> {
         }
     }
     let epsg = u16::try_from(h.epsg).map_err(|_| GridError::EpsgOutOfRange { epsg: h.epsg })?;
-    check_data_len(h, grid.data.len())?;
+    check_data_len(h, cells)?;
     Ok((width, height, epsg))
 }
 
-fn compress_tiles(path: &Path, grid: &Grid) -> Result<Vec<Vec<u8>>> {
-    let nx = grid.header.nx;
-    let ny = grid.header.ny;
-    let pad = grid.header.nodata.to_le_bytes();
+fn compress_tiles<T: CogSample>(
+    path: &Path,
+    h: &GridHeader,
+    data: &[T],
+    pad: T,
+) -> Result<Vec<Vec<u8>>> {
+    let nx = h.nx;
+    let ny = h.ny;
     let across = nx.div_ceil(TILE_SIZE);
     let down = ny.div_ceil(TILE_SIZE);
-    let mut raw = Vec::with_capacity(TILE_SIZE * TILE_SIZE * 4);
+    let mut raw = Vec::with_capacity(TILE_SIZE * TILE_SIZE * usize::from(T::BITS / 8));
     let mut tiles = Vec::with_capacity(across * down);
     for tr in 0..down {
         for tc in 0..across {
@@ -134,9 +186,9 @@ fn compress_tiles(path: &Path, grid: &Grid) -> Result<Vec<Vec<u8>>> {
                 for c in 0..TILE_SIZE {
                     let col = tc * TILE_SIZE + c;
                     if row < ny && col < nx {
-                        raw.extend_from_slice(&grid.data[row * nx + col].to_le_bytes());
+                        data[row * nx + col].put(&mut raw);
                     } else {
-                        raw.extend_from_slice(&pad);
+                        pad.put(&mut raw);
                     }
                 }
             }
@@ -152,10 +204,9 @@ fn compress_tiles(path: &Path, grid: &Grid) -> Result<Vec<Vec<u8>>> {
     Ok(tiles)
 }
 
-fn encode(path: &Path, grid: &Grid) -> Result<Vec<u8>> {
-    let (width, height, epsg) = validate(grid)?;
-    let h = &grid.header;
-    let tiles = compress_tiles(path, grid)?;
+fn encode<T: CogSample>(path: &Path, h: &GridHeader, data: &[T], pad: T) -> Result<Vec<u8>> {
+    let (width, height, epsg) = validate(h, data.len())?;
+    let tiles = compress_tiles(path, h, data, pad)?;
     let too_large = |bytes: u64| GridError::FileTooLarge {
         path: path.to_path_buf(),
         bytes,
@@ -171,7 +222,7 @@ fn encode(path: &Path, grid: &Grid) -> Result<Vec<u8>> {
     let mut entries = vec![
         Entry::longs(256, &[width]),
         Entry::longs(257, &[height]),
-        Entry::shorts(258, &[32]),
+        Entry::shorts(258, &[T::BITS]),
         Entry::shorts(259, &[COMPRESSION_DEFLATE]),
         Entry::shorts(262, &[1]),
         Entry::shorts(277, &[1]),
@@ -181,7 +232,7 @@ fn encode(path: &Path, grid: &Grid) -> Result<Vec<u8>> {
         Entry::shorts(323, &[tile_size]),
         Entry::longs(324, &vec![0; tiles.len()]),
         Entry::longs(325, &byte_counts),
-        Entry::shorts(339, &[SAMPLE_FORMAT_IEEE_FP]),
+        Entry::shorts(339, &[T::FORMAT]),
         Entry::doubles(TAG_MODEL_PIXEL_SCALE, &[h.dx, h.dy, 0.0]),
         Entry::doubles(
             TAG_MODEL_TIEPOINT,
@@ -265,4 +316,71 @@ fn encode(path: &Path, grid: &Grid) -> Result<Vec<u8>> {
     }
     debug_assert_eq!(out.len() as u64, total);
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::read_geotiff_u8;
+
+    fn header(nx: usize, ny: usize, nodata: f32) -> GridHeader {
+        GridHeader {
+            nx,
+            ny,
+            dx: 30.0,
+            dy: 30.0,
+            origin_x: -876_180.0,
+            origin_y: 1_499_820.0,
+            epsg: 5070,
+            nodata,
+        }
+    }
+
+    fn tmp(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("firespread-grid-cog-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(name)
+    }
+
+    #[test]
+    fn write_cog_u8_round_trips_through_read_geotiff_u8() {
+        // 300 x 257 has partial edge tiles in both directions.
+        let h = header(300, 257, 255.0);
+        let data: Vec<u8> = (0..h.ny)
+            .flat_map(|r| (0..h.nx).map(move |c| ((r * 31 + c * 17) % 256) as u8))
+            .collect();
+        let grid = MaskGrid::new(h, data).unwrap();
+        let path = tmp("roundtrip_u8_300x257.tif");
+        write_cog_u8(&path, &grid).unwrap();
+        let back = read_geotiff_u8(&path).unwrap();
+        assert!(
+            back.header.same_grid(&grid.header),
+            "header: got {:?}, wrote {:?}",
+            back.header,
+            grid.header
+        );
+        if let Some(i) = (0..grid.data.len()).find(|&i| back.data[i] != grid.data[i]) {
+            panic!(
+                "cell ({}, {}): got {}, wrote {}",
+                i / h.nx,
+                i % h.nx,
+                back.data[i],
+                grid.data[i]
+            );
+        }
+    }
+
+    #[test]
+    fn write_cog_u8_rejects_nodata_outside_u8() {
+        for nodata in [-9999.0, 256.0, 0.5, f32::NAN] {
+            let grid = MaskGrid::new(header(2, 1, nodata), vec![0, 1]).unwrap();
+            let Err(e) = write_cog_u8(tmp("bad_nodata.tif"), &grid) else {
+                panic!("nodata {nodata} was written");
+            };
+            assert!(
+                matches!(e, GridError::NodataNotU8 { .. }),
+                "nodata {nodata}: {e:?}"
+            );
+        }
+    }
 }

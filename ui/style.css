@@ -11,6 +11,10 @@
   /* Map line colours sit on the hillshade, which is the same in both themes. */
   --observed-line: #2a5a86;
   --observed-halo: #eef0eb;
+  /* Confusion map codes 1 (hit), 2 (miss), 3 (false alarm); code 0 is transparent. */
+  --confusion-hit: #1a9850;
+  --confusion-miss: #f46d0e;
+  --confusion-false-alarm: #8e3fb5;
 }
 
 @media (prefers-color-scheme: dark) {

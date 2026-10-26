@@ -5,7 +5,7 @@
 //! stored row-major with the north row first. [`read_geotiff`] loads one from a
 //! single-band `f32` GeoTIFF, [`read_geotiff_u8`] loads a [`MaskGrid`] of `u8`
 //! cells from a single-band 8-bit unsigned GeoTIFF, [`write_cog`] writes a
-//! [`Grid`] as a tiled,
+//! [`Grid`] and [`write_cog_u8`] a [`MaskGrid`] as a tiled,
 //! Deflate-compressed GeoTIFF, and [`Manifest`] records the inputs and outputs
 //! of one forecast run.
 
@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-pub use cog::{TILE_SIZE, write_cog};
+pub use cog::{TILE_SIZE, write_cog, write_cog_u8};
 pub use geotiff::{read_geotiff, read_geotiff_header, read_geotiff_u8};
 pub use manifest::{ForecastWindow, MANIFEST_VERSION, Manifest, WindLimitPolicy};
 
@@ -113,6 +113,9 @@ pub enum GridError {
     /// The GDAL_NODATA tag (42113) does not parse as an `f32`.
     #[error("{path} GDAL_NODATA value {text:?} is not an f32")]
     InvalidNodata { path: PathBuf, text: String },
+    /// The `nodata` of a grid written as `u8` is not an integer in 0..=255.
+    #[error("nodata {nodata} is not an integer in 0..=255")]
+    NodataNotU8 { nodata: f32 },
     /// The encoded file would exceed the 4 GiB classic TIFF offset range.
     #[error("{path} would be {bytes} bytes, beyond the classic TIFF limit")]
     FileTooLarge { path: PathBuf, bytes: u64 },
@@ -213,6 +216,14 @@ impl Grid {
 pub struct MaskGrid {
     pub header: GridHeader,
     pub data: Vec<u8>,
+}
+
+impl MaskGrid {
+    /// Builds a mask grid, failing when `data.len()` differs from `nx * ny`.
+    pub fn new(header: GridHeader, data: Vec<u8>) -> Result<MaskGrid> {
+        check_data_len(&header, data.len())?;
+        Ok(MaskGrid { header, data })
+    }
 }
 
 pub(crate) fn check_data_len(header: &GridHeader, found: usize) -> Result<()> {

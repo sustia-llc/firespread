@@ -218,8 +218,12 @@ The data is not in git. All data goes in `data/`, which git ignores. Set
    target/release/firespread score --run data/runs/w1-seed7-m200 --data data
    ```
 
-   This adds `scorecard.json`, `area_by_hour.json` and `observed.geojson`, and
-   prints the scorecard.
+   This adds `scorecard.json`, `area_by_hour.json`, `confusion_h12.tif` and
+   `observed.geojson`, and prints the scorecard. The confusion file has one
+   code per cell at the scored hour: 0 none, 1 hit, 2 miss, 3 false alarm. A
+   hit is a cell that the forecast (burn probability 0.5 or more) and FEDS
+   both burned. A miss burned in FEDS only, and a false alarm burned in the
+   forecast only.
 
 For w3, use `--config config/w3.toml`. Window w3 lasts 24 h, and the scorer
 needs the 24 h forecast hour that this file adds.
@@ -279,6 +283,9 @@ The page shows:
 
 - The burn probability map, with a slider for the forecast hour.
 - The observed perimeter at the end of the window.
+- The confusion map at the scored hour: green hits, orange misses and purple
+  false alarms. The layer is off by default. If the run has no
+  confusion file, the page skips this layer.
 - A hillshade of the terrain.
 - A street basemap from `data/basemap/region.pmtiles`. If that file is
   missing, the page skips this layer.
