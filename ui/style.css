@@ -8,6 +8,9 @@
   --hairline: #b9c0b6;
   --accent: #a8380b;
   --link: #2a5a86;
+  /* Map line colours sit on the hillshade, which is the same in both themes. */
+  --observed-line: #2a5a86;
+  --observed-halo: #eef0eb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -218,11 +221,11 @@ svg.chart .s-firespread {
 }
 
 svg.chart .s-persistence {
-  fill: var(--ink);
+  fill: var(--muted);
 }
 
 svg.chart .s-uniform_growth {
-  fill: var(--muted);
+  fill: var(--soft);
 }
 
 svg.chart .band {

@@ -180,10 +180,17 @@
       console.info("[firespread] run/observed.geojson not found");
       return;
     }
-    var ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim();
-    var layer = L.geoJSON(gj, {
-      style: { color: ink, weight: 2, fill: false, dashArray: "4 3" },
+    var css = getComputedStyle(document.documentElement);
+    var line = css.getPropertyValue("--observed-line").trim();
+    var halo = css.getPropertyValue("--observed-halo").trim();
+    var casing = L.geoJSON(gj, {
+      style: { color: halo, weight: 5, opacity: 0.9, fill: false },
+      interactive: false,
     });
+    var stroke = L.geoJSON(gj, {
+      style: { color: line, weight: 2.5, fill: false, dashArray: "6 4" },
+    });
+    var layer = L.layerGroup([casing, stroke]);
     layer.addTo(map);
     layers.addOverlay(layer, "Observed perimeter");
   }
