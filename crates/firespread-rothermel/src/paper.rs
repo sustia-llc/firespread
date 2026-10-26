@@ -572,6 +572,118 @@ pub(crate) fn spread_directional(
     })
 }
 
+/// The terms of `spread_directional` that depend on the bed and the wind
+/// policy alone, with each product and power formed as `spread_directional`
+/// forms it, so that `eval` returns its output bit for bit.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DirModel {
+    limit: WindLimit,
+    /// R_0, ft/min.
+    r0: f64,
+    /// I_R, Btu/ft2-min.
+    ir: f64,
+    /// Wind coefficient C.
+    c: f64,
+    /// Wind exponent B.
+    b: f64,
+    /// 1/B.
+    inv_b: f64,
+    /// (β/β_op)^−E.
+    ratio_neg_e: f64,
+    /// (β/β_op)^E.
+    ratio_e: f64,
+    /// 5.275 β^−0.3, the slope factor at tan φ = 1.
+    phi_s_coef: f64,
+    /// Wind limit 0.9 I_R, ft/min.
+    u_max: f64,
+    /// φ_w at the wind limit.
+    phi_w_at_u_max: f64,
+    /// I_R t_r, Btu/ft2.
+    ir_tr: f64,
+}
+
+impl DirModel {
+    /// Validates the bed and computes its wind- and slope-independent terms.
+    pub(crate) fn new(bed: &Bed<'_>, limit: WindLimit) -> Result<Self> {
+        let Base {
+            r0,
+            ir,
+            beta,
+            ratio,
+            c,
+            b,
+            e,
+            u_max,
+            tr,
+            ..
+        } = base(
+            bed,
+            &Env {
+                wind_ft_min: 0.0,
+                slope_tan: 0.0,
+            },
+        )?;
+        Ok(Self {
+            limit,
+            r0,
+            ir,
+            c,
+            b,
+            inv_b: 1.0 / b,
+            ratio_neg_e: ratio.powf(-e),
+            ratio_e: ratio.powf(e),
+            phi_s_coef: 5.275 * beta.powf(-0.3),
+            u_max,
+            phi_w_at_u_max: phi_w(c, b, e, u_max, ratio),
+            ir_tr: ir * tr,
+        })
+    }
+
+    /// `spread_directional` of the bed this model was built from, at `env`.
+    /// Validates `env` as `spread_directional` does.
+    pub(crate) fn eval(&self, env: &DirEnv) -> Result<DirOutput> {
+        let wind = check("wind", env.wind_ft_min, false)?;
+        let slope_tan = check("slope", env.slope_tan, false)?;
+        let wind_az = check_finite("wind azimuth", env.wind_toward_azimuth_rad)?;
+        let upslope_az = check_finite("upslope azimuth", env.upslope_azimuth_rad)?;
+        let phi_s = self.phi_s_coef * slope_tan * slope_tan;
+        let wind_used = match self.limit {
+            WindLimit::Rothermel => wind.min(self.u_max),
+            WindLimit::None | WindLimit::EffectiveWind => wind,
+        };
+        let pw = self.c * wind_used.powf(self.b) * self.ratio_neg_e;
+        let east = pw * wind_az.sin() + phi_s * upslope_az.sin();
+        let north = pw * wind_az.cos() + phi_s * upslope_az.cos();
+        let resultant = east.hypot(north);
+        let azimuth = if resultant > 0.0 {
+            normalize_azimuth(east.atan2(north))
+        } else if slope_tan > 0.0 {
+            normalize_azimuth(upslope_az)
+        } else if wind > 0.0 {
+            normalize_azimuth(wind_az)
+        } else {
+            0.0
+        };
+        let u_e = (resultant * self.ratio_e / self.c).powf(self.inv_b);
+        let (phi_e, u_e) = match self.limit {
+            WindLimit::EffectiveWind if u_e > self.u_max => (self.phi_w_at_u_max, self.u_max),
+            _ => (resultant, u_e),
+        };
+        let ros = self.r0 * (1.0 + phi_e);
+        let ib = self.ir_tr * ros / 60.0;
+        Ok(DirOutput {
+            ros_ft_min: ros,
+            r0_ft_min: self.r0,
+            reaction_intensity_btu_ft2_min: self.ir,
+            max_spread_azimuth_rad: azimuth,
+            phi_e,
+            effective_wind_ft_min: u_e,
+            fireline_intensity_btu_ft_s: ib,
+            flame_length_ft: flame_length(ib),
+        })
+    }
+}
+
 /// Validates the bed and environment and computes the wind-independent part
 /// of the final model, Table 6a-6c (pp. 17-19).
 fn base(bed: &Bed<'_>, env: &Env) -> Result<Base> {

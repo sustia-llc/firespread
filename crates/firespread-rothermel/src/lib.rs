@@ -260,18 +260,63 @@ pub fn spread_directional(
         depth_ft: units::m_to_ft(bed.depth_m),
         dead_mx: bed.dead_mx,
     };
-    let paper_env = paper::DirEnv {
+    let out = paper::spread_directional(&paper_bed, &dir_env_to_paper(env), limit)?;
+    Ok(directional_output_to_si(&out))
+}
+
+/// [`spread_directional`] for one bed and wind policy with every term that
+/// depends on neither wind nor slope computed once, in [`DirectionalModel::new`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DirectionalModel {
+    inner: paper::DirModel,
+}
+
+impl DirectionalModel {
+    /// Validates `bed` and computes its wind- and slope-independent terms
+    /// under `limit`.
+    ///
+    /// # Errors
+    /// The bed errors of [`spread_directional`]: an invalid depth, moisture of
+    /// extinction or class, no fuel, or a zero heat sink.
+    pub fn new(bed: &FuelBed, limit: WindLimit) -> Result<Self> {
+        let classes: Vec<paper::Class> = bed.classes.iter().map(|c| c.to_paper()).collect();
+        let paper_bed = paper::Bed {
+            classes: &classes,
+            depth_ft: units::m_to_ft(bed.depth_m),
+            dead_mx: bed.dead_mx,
+        };
+        Ok(Self {
+            inner: paper::DirModel::new(&paper_bed, limit)?,
+        })
+    }
+
+    /// Returns `spread_directional(bed, env, limit)` bit for bit, for the
+    /// `bed` and `limit` this model was built from.
+    ///
+    /// # Errors
+    /// [`RothermelError::InvalidInput`] when the wind speed or slope is
+    /// negative or not finite, or an azimuth is not finite.
+    pub fn eval(&self, env: &DirectionalEnvironment) -> Result<DirectionalOutput> {
+        let out = self.inner.eval(&dir_env_to_paper(env))?;
+        Ok(directional_output_to_si(&out))
+    }
+}
+
+fn dir_env_to_paper(env: &DirectionalEnvironment) -> paper::DirEnv {
+    paper::DirEnv {
         wind_ft_min: units::m_s_to_ft_min(env.midflame_wind_m_s),
         wind_toward_azimuth_rad: env.wind_toward_azimuth_rad,
         slope_tan: env.slope_tan,
         upslope_azimuth_rad: env.upslope_azimuth_rad,
-    };
-    let out = paper::spread_directional(&paper_bed, &paper_env, limit)?;
+    }
+}
+
+fn directional_output_to_si(out: &paper::DirOutput) -> DirectionalOutput {
     let head = units::ft_min_to_m_s(out.ros_ft_min);
     let u_e = units::ft_min_to_m_s(out.effective_wind_ft_min);
     let lb = ellipse::length_to_breadth(u_e);
     let hb = ellipse::head_to_back(lb);
-    Ok(DirectionalOutput {
+    DirectionalOutput {
         head_ros_m_s: head,
         max_spread_azimuth_rad: out.max_spread_azimuth_rad,
         phi_e: out.phi_e,
@@ -286,7 +331,7 @@ pub fn spread_directional(
             / 1000.0,
         fireline_intensity_kw_m: units::btu_ft_s_to_w_m(out.fireline_intensity_btu_ft_s) / 1000.0,
         flame_length_m: units::ft_to_m(out.flame_length_ft),
-    })
+    }
 }
 
 /// Basic single-class model (Andrews 2018 §3.1) with the Rothermel (1972)
