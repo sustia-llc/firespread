@@ -1,6 +1,7 @@
 #![cfg(feature = "serve")]
-//! The `serve` example's router: GET of a run file returns its bytes and
-//! content type, and a `..` path outside a mount returns 404.
+//! The `serve` example's router: GET of a run or diagrams file returns its
+//! bytes, a missing diagrams file returns 404, and a `..` path outside a mount
+//! returns 404.
 
 #[path = "../examples/serve.rs"]
 #[allow(dead_code)]
@@ -19,7 +20,7 @@ const MANIFEST: &[u8] =
 const SECRET: &[u8] = b"[package]\nname = \"outside-the-mounts\"\n";
 
 /// Temporary tree: `<root>/Cargo.toml` outside every mount, and the
-/// `ui`, `run` and `basemap` mounts below it.
+/// `ui`, `run`, `basemap` and `diagrams` mounts below it.
 struct Tree {
     root: PathBuf,
     tif: Vec<u8>,
@@ -35,7 +36,7 @@ impl Tree {
             "firespread-serve-{tag}-{}-{nanos}",
             std::process::id()
         ));
-        for d in ["ui", "run", "basemap"] {
+        for d in ["ui", "run", "basemap", "diagrams"] {
             std::fs::create_dir_all(root.join(d)).unwrap();
         }
         // Little-endian TIFF magic followed by bytes that are not valid UTF-8.
@@ -53,6 +54,7 @@ impl Tree {
             ui: self.root.join("ui"),
             run: self.root.join("run"),
             basemap: self.root.join("basemap"),
+            diagrams: self.root.join("diagrams"),
         }
     }
 }
@@ -162,6 +164,23 @@ async fn ui_index_is_served_at_root() {
 }
 
 #[tokio::test]
+async fn diagrams_are_served_at_diagrams() {
+    let tree = Tree::new("diagrams");
+    let png = b"\x89PNG\r\n\x1a\ndiagram".to_vec();
+    std::fs::write(tree.root.join("diagrams/d1.png"), &png).unwrap();
+    let addr = spawn(&tree.dirs()).await;
+    let r = get(addr, "/diagrams/d1.png").await;
+    assert_eq!(r.status, 200, "GET /diagrams/d1.png status");
+    assert_eq!(r.body, png, "GET /diagrams/d1.png bytes differ");
+    let r = get(addr, "/diagrams/missing.png").await;
+    assert_eq!(
+        r.status, 404,
+        "GET /diagrams/missing.png returned {}",
+        r.status
+    );
+}
+
+#[tokio::test]
 async fn parent_segments_return_404() {
     let tree = Tree::new("traversal");
     assert!(tree.root.join("Cargo.toml").is_file());
@@ -172,6 +191,7 @@ async fn parent_segments_return_404() {
         "/run/%2E%2E/Cargo.toml",
         "/run/..%2fCargo.toml",
         "/basemap/../Cargo.toml",
+        "/diagrams/../Cargo.toml",
         "/../Cargo.toml",
         "/%2e%2e/Cargo.toml",
     ] {

@@ -1,11 +1,13 @@
 #![forbid(unsafe_code)]
 //! Read-only local http server for the static page. It binds 127.0.0.1 and
-//! serves three directories with `ServeDir`: `/` from the ui directory,
-//! `/run/` from a run directory and `/basemap/` from a basemap directory.
+//! serves four directories with `ServeDir`: `/` from the ui directory,
+//! `/run/` from a run directory, `/basemap/` from a basemap directory and
+//! `/diagrams/` from a diagrams directory.
 //!
-//! Usage: `serve --run <dir> [--ui <dir>] [--basemap <dir>] [--port <u16>]`.
-//! The defaults are `--ui ui`, `--basemap data/basemap` and `--port 0`; port 0
-//! takes a free port. The bound URL is printed on stdout.
+//! Usage: `serve --run <dir> [--ui <dir>] [--basemap <dir>] [--diagrams <dir>]
+//! [--port <u16>]`. The defaults are `--ui ui`, `--basemap data/basemap`,
+//! `--diagrams docs/diagrams` and `--port 0`; port 0 takes a free port. The
+//! bound URL is printed on stdout.
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -23,15 +25,19 @@ pub struct ServeDirs {
     pub run: PathBuf,
     /// Served at `/basemap/`.
     pub basemap: PathBuf,
+    /// Served at `/diagrams/`.
+    pub diagrams: PathBuf,
 }
 
-/// Router serving `dirs.run` at `/run/`, `dirs.basemap` at `/basemap/` and
-/// `dirs.ui` for every other path. Every route is a `ServeDir`, which answers
-/// GET and HEAD and returns 404 for a path with a `..` segment.
+/// Router serving `dirs.run` at `/run/`, `dirs.basemap` at `/basemap/`,
+/// `dirs.diagrams` at `/diagrams/` and `dirs.ui` for every other path. Every
+/// route is a `ServeDir`, which answers GET and HEAD and returns 404 for a
+/// missing file or a path with a `..` segment.
 pub fn router(dirs: &ServeDirs) -> Router {
     Router::new()
         .nest_service("/run", ServeDir::new(&dirs.run))
         .nest_service("/basemap", ServeDir::new(&dirs.basemap))
+        .nest_service("/diagrams", ServeDir::new(&dirs.diagrams))
         .fallback_service(ServeDir::new(&dirs.ui))
 }
 
@@ -46,6 +52,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> anyhow::Result<Args> {
     let mut run: Option<PathBuf> = None;
     let mut ui = PathBuf::from("ui");
     let mut basemap = PathBuf::from("data/basemap");
+    let mut diagrams = PathBuf::from("docs/diagrams");
     let mut port: u16 = 0;
     while let Some(flag) = it.next() {
         let value = it
@@ -55,6 +62,7 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> anyhow::Result<Args> {
             "--run" => run = Some(PathBuf::from(value)),
             "--ui" => ui = PathBuf::from(value),
             "--basemap" => basemap = PathBuf::from(value),
+            "--diagrams" => diagrams = PathBuf::from(value),
             "--port" => {
                 port = value
                     .parse()
@@ -69,14 +77,24 @@ fn parse_args(mut it: impl Iterator<Item = String>) -> anyhow::Result<Args> {
             bail!("argument `{name}`: `{}` is not a directory", dir.display());
         }
     }
-    if !basemap.is_dir() {
-        eprintln!(
-            "note: basemap directory `{}` does not exist; /basemap/ will return 404",
-            basemap.display()
-        );
+    for (name, route, dir) in [
+        ("basemap", "/basemap/", &basemap),
+        ("diagrams", "/diagrams/", &diagrams),
+    ] {
+        if !dir.is_dir() {
+            eprintln!(
+                "note: {name} directory `{}` does not exist; {route} will return 404",
+                dir.display()
+            );
+        }
     }
     Ok(Args {
-        dirs: ServeDirs { ui, run, basemap },
+        dirs: ServeDirs {
+            ui,
+            run,
+            basemap,
+            diagrams,
+        },
         port,
     })
 }

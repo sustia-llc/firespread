@@ -113,6 +113,9 @@ The box is the run grid from `data/extent.json`. The extract is about 3.4 MB.
    two observed areas.
 7. Hover over or tap any "?" button, entrant name, layer name or the slider. A
    short help text explains the item.
+8. Open the diagram links below the charts: input layers, cell logic and
+   forecast hours. Each opens in a new tab. Start the server from the
+   repository root, because it reads `docs/diagrams/` by default.
 
 ### A live forecast
 

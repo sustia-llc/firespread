@@ -314,6 +314,9 @@ The page shows:
 - A street basemap from `data/basemap/region.pmtiles`. If that file is
   missing, the page skips this layer.
 - The scorecard chart, the WFIGS table and the burned area by hour.
+- Links to the input layers, cell logic and forecast hours diagrams. The
+  server reads them from `docs/diagrams/`, and the option `--diagrams <dir>`
+  changes that folder. If no diagram is found, the page hides the links.
 
 Each item has a short help text. Hover over it, tap it or select it with the
 keyboard to see the text.

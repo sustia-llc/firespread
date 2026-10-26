@@ -272,6 +272,29 @@
     layers.addOverlay(layer, layerName("Vector basemap", "layerVector"));
   }
 
+  async function showDiagrams() {
+    var section = document.getElementById("panel-diagrams");
+    var links = Array.prototype.slice.call(section.querySelectorAll("a"));
+    var ok = await Promise.all(
+      links.map(function (a) {
+        return fetch(a.getAttribute("href"), { method: "HEAD" }).then(
+          function (r) {
+            return r.status === 200;
+          },
+          function () {
+            return false;
+          }
+        );
+      })
+    );
+    if (ok.indexOf(true) === -1) {
+      console.info("[firespread] diagrams/ not found; diagrams section hidden");
+      section.hidden = true;
+      return;
+    }
+    section.hidden = false;
+  }
+
   async function addHillshade(map, layers) {
     try {
       var g = await loadGeoraster("basemap/hillshade.tif");
@@ -696,10 +719,12 @@
     initHelp();
     drawLegend();
     var panels = loadPanels();
+    var diagrams = showDiagrams();
     var manifest = await fetchOrNull("run/manifest.json", "json");
     if (manifest === null) {
       setStatus("run/manifest.json not found");
       await panels;
+      await diagrams;
       return;
     }
     var runId = String(manifest.run_id || "");
@@ -727,6 +752,7 @@
     await addObserved(map, layers);
     await addConfusion(map, layers);
     await panels;
+    await diagrams;
     setStatus("ready");
     document.body.setAttribute("data-ready", "1");
   }
