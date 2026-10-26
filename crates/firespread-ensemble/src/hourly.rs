@@ -3,10 +3,12 @@
 //! hour's temperature, humidity and cloud cover or, in night hours, from a
 //! fixed night setting, and spread advanced hour by hour.
 
+use std::any::Any;
 use std::collections::BTreeMap;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 
 use firespread_fuel::{Moistures, by_code, units};
 use firespread_grid::{GridHeader, read_geotiff, read_geotiff_u8, write_cog};
@@ -673,6 +675,189 @@ impl HourlyCounts {
 
 type Slot = (Workspace, Vec<f32>);
 
+/// The message of a panic payload: the `&str` or `String` it carries, or
+/// `"non-string panic payload"`.
+#[must_use]
+pub fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "non-string panic payload".to_string())
+}
+
+/// What [`HourlyAccumulator::run_member_guarded`] did with one member.
+#[derive(Debug)]
+pub enum GuardedMember {
+    /// The member ran to the largest horizon.
+    Done(HourlyMemberSummary),
+    /// The member returned an error.
+    Failed(EnsembleError),
+    /// The member panicked; the message of its payload.
+    Panicked(String),
+    /// The stop flag was set before the member started; it did not run.
+    Skipped,
+}
+
+/// Burn counts of an hourly ensemble as its members finish, with a pool of
+/// reusable member buffers. Holds the perturbation, seed, cell side and
+/// horizons of the run, and `counts[k * cells + cell]`: members whose
+/// arrival time at `cell` is `<= 3600 horizons_h[k]` s. It does not hold the
+/// inputs; each call takes them.
+pub struct HourlyAccumulator {
+    perturbation: HourlyPerturbation,
+    seed: u64,
+    dx: f64,
+    horizon_max: u32,
+    horizons_s: Vec<f32>,
+    cells: usize,
+    counts: Vec<AtomicU16>,
+    buffers: Mutex<Vec<Slot>>,
+}
+
+impl HourlyAccumulator {
+    /// Zero counts for each horizon of `horizons_h` over the cells of
+    /// `inputs`, for members drawn by `perturbation.draw(seed, i, dx)`.
+    ///
+    /// # Errors
+    /// [`EnsembleError::NoHorizons`] for an empty horizon list,
+    /// [`EnsembleError::TooFewHours`] when the weather holds fewer hours
+    /// than the largest horizon, and the errors of
+    /// [`HourlyPerturbation::draw`] for member 0.
+    pub fn new(
+        inputs: &HourlyInputs,
+        perturbation: HourlyPerturbation,
+        seed: u64,
+        horizons_h: &[u32],
+    ) -> Result<Self> {
+        let Some(&horizon_max) = horizons_h.iter().max() else {
+            return Err(EnsembleError::NoHorizons);
+        };
+        if usize::try_from(horizon_max).unwrap_or(usize::MAX) > inputs.weather.hours.len() {
+            return Err(EnsembleError::TooFewHours {
+                available: inputs.weather.hours.len(),
+                horizon_h: horizon_max,
+            });
+        }
+        let dx = f64::from(inputs.inputs.grid().dx_m());
+        perturbation.draw(seed, 0, dx)?;
+        let cells = inputs.inputs.len();
+        Ok(Self {
+            perturbation,
+            seed,
+            dx,
+            horizon_max,
+            horizons_s: horizons_h.iter().map(|&h| h as f32 * S_PER_HOUR).collect(),
+            cells,
+            counts: (0..cells * horizons_h.len())
+                .map(|_| AtomicU16::new(0))
+                .collect(),
+            buffers: Mutex::new(Vec::new()),
+        })
+    }
+
+    /// Runs member `member`: takes the draws `perturbation.draw(seed,
+    /// member, dx)`, runs `member_fn` on `inputs` to the largest horizon with
+    /// buffers from the pool, adds 1 to the count of each horizon `k` and
+    /// cell with arrival time `<= 3600 horizons_h[k]` s, and returns the
+    /// buffers to the pool. `inputs` are the inputs given to
+    /// [`HourlyAccumulator::new`].
+    ///
+    /// # Errors
+    /// The errors of [`HourlyPerturbation::draw`] and of `member_fn`, and
+    /// [`EnsembleError::BufferPoolPoisoned`].
+    pub fn run_member<F>(
+        &self,
+        inputs: &HourlyInputs,
+        member: u32,
+        member_fn: &F,
+    ) -> Result<HourlyMemberSummary>
+    where
+        F: Fn(
+            &HourlyInputs,
+            &MemberDraw,
+            &mut Workspace,
+            &mut Vec<f32>,
+            u32,
+        ) -> Result<HourlyStats>,
+    {
+        let draw = self.perturbation.draw(self.seed, member, self.dx)?;
+        let slot = self
+            .buffers
+            .lock()
+            .map_err(|_| EnsembleError::BufferPoolPoisoned)?
+            .pop();
+        let (mut workspace, mut arrival) = slot.unwrap_or_else(|| (Workspace::new(), Vec::new()));
+        let stats = member_fn(
+            inputs,
+            &draw,
+            &mut workspace,
+            &mut arrival,
+            self.horizon_max,
+        )?;
+        let horizon_max_s = self.horizon_max as f32 * S_PER_HOUR;
+        let mut burned_cells = vec![0_usize; self.horizons_s.len()];
+        for (cell, &t) in arrival.iter().enumerate() {
+            if t > horizon_max_s {
+                continue;
+            }
+            for (k, &h) in self.horizons_s.iter().enumerate() {
+                if t <= h {
+                    self.counts[k * self.cells + cell].fetch_add(1, Ordering::Relaxed);
+                    burned_cells[k] += 1;
+                }
+            }
+        }
+        self.buffers
+            .lock()
+            .map_err(|_| EnsembleError::BufferPoolPoisoned)?
+            .push((workspace, arrival));
+        Ok(HourlyMemberSummary {
+            draw,
+            stats,
+            burned_cells,
+        })
+    }
+
+    /// [`GuardedMember::Skipped`] when `stop` is set, else
+    /// [`HourlyAccumulator::run_member`] with its error as
+    /// [`GuardedMember::Failed`] and a panic as [`GuardedMember::Panicked`].
+    pub fn run_member_guarded<F>(
+        &self,
+        inputs: &HourlyInputs,
+        member: u32,
+        member_fn: &F,
+        stop: &AtomicBool,
+    ) -> GuardedMember
+    where
+        F: Fn(
+            &HourlyInputs,
+            &MemberDraw,
+            &mut Workspace,
+            &mut Vec<f32>,
+            u32,
+        ) -> Result<HourlyStats>,
+    {
+        if stop.load(Ordering::Acquire) {
+            return GuardedMember::Skipped;
+        }
+        match catch_unwind(AssertUnwindSafe(|| {
+            self.run_member(inputs, member, member_fn)
+        })) {
+            Ok(Ok(summary)) => GuardedMember::Done(summary),
+            Ok(Err(source)) => GuardedMember::Failed(source),
+            Err(payload) => GuardedMember::Panicked(panic_message(payload.as_ref())),
+        }
+    }
+
+    /// The counts, `counts[k][cell]` per horizon `k`.
+    #[must_use]
+    pub fn into_counts(self) -> Vec<Vec<u16>> {
+        let flat: Vec<u16> = self.counts.into_iter().map(AtomicU16::into_inner).collect();
+        flat.chunks(self.cells).map(<[u16]>::to_vec).collect()
+    }
+}
+
 /// Runs `members` members on the current rayon pool. Member `i` takes the
 /// draws `perturbation.draw(seed, i, dx)`, runs [`run_hourly_member`] to the
 /// largest horizon, and adds 1 to `counts[k][cell]` for each horizon `k` with
@@ -701,71 +886,24 @@ pub fn run_hourly_ensemble(
     if members > max {
         return Err(EnsembleError::TooManyMembers { members, max });
     }
-    let Some(&horizon_max) = horizons_h.iter().max() else {
-        return Err(EnsembleError::NoHorizons);
-    };
-    if usize::try_from(horizon_max).unwrap_or(usize::MAX) > inputs.weather.hours.len() {
-        return Err(EnsembleError::TooFewHours {
-            available: inputs.weather.hours.len(),
-            horizon_h: horizon_max,
-        });
-    }
-    let dx = f64::from(inputs.inputs.grid().dx_m());
-    perturbation.draw(seed, 0, dx)?;
-    let horizons_s: Vec<f32> = horizons_h.iter().map(|&h| h as f32 * S_PER_HOUR).collect();
-    let horizon_max_s = horizon_max as f32 * S_PER_HOUR;
-    let n = inputs.inputs.len();
-    let counts: Vec<AtomicU16> = (0..n * horizons_h.len())
-        .map(|_| AtomicU16::new(0))
-        .collect();
-    let pool: Mutex<Vec<Slot>> = Mutex::new(Vec::new());
-
-    let run = |member: u32| -> Result<HourlyMemberSummary> {
-        let draw = perturbation.draw(seed, member, dx)?;
-        let slot = pool
-            .lock()
-            .map_err(|_| EnsembleError::BufferPoolPoisoned)?
-            .pop();
-        let (mut workspace, mut arrival) = slot.unwrap_or_else(|| (Workspace::new(), Vec::new()));
-        let stats = run_hourly_member(inputs, &draw, &mut workspace, &mut arrival, horizon_max)?;
-        let mut burned_cells = vec![0_usize; horizons_s.len()];
-        for (cell, &t) in arrival.iter().enumerate() {
-            if t > horizon_max_s {
-                continue;
-            }
-            for (k, &h) in horizons_s.iter().enumerate() {
-                if t <= h {
-                    counts[k * n + cell].fetch_add(1, Ordering::Relaxed);
-                    burned_cells[k] += 1;
-                }
-            }
-        }
-        pool.lock()
-            .map_err(|_| EnsembleError::BufferPoolPoisoned)?
-            .push((workspace, arrival));
-        Ok(HourlyMemberSummary {
-            draw,
-            stats,
-            burned_cells,
-        })
-    };
-
+    let accumulator = HourlyAccumulator::new(inputs, *perturbation, seed, horizons_h)?;
     let summaries = (0..members)
         .into_par_iter()
         .map(|member| {
-            run(member).map_err(|e| EnsembleError::MemberFailed {
-                member: member as usize,
-                members: members as usize,
-                reason: e.to_string(),
-            })
+            accumulator
+                .run_member(inputs, member, &run_hourly_member)
+                .map_err(|e| EnsembleError::MemberFailed {
+                    member: member as usize,
+                    members: members as usize,
+                    reason: e.to_string(),
+                })
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let flat: Vec<u16> = counts.into_iter().map(AtomicU16::into_inner).collect();
     Ok(HourlyCounts {
         members,
         horizons_h: horizons_h.to_vec(),
-        counts: flat.chunks(n).map(<[u16]>::to_vec).collect(),
+        counts: accumulator.into_counts(),
         summaries,
     })
 }
@@ -791,4 +929,173 @@ pub fn write_probability_cogs(
         out.insert(key, path);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::weather::RawHour;
+
+    /// Flat GR2 on a 21 x 21 grid of 30 m cells, ignited at the centre, with
+    /// three hours of 3 m/s wind toward east.
+    fn flat_gr2() -> HourlyInputs {
+        let (nx, ny) = (21, 21);
+        let n = nx * ny;
+        let mut mask = vec![0_u8; n];
+        mask[10 * nx + 10] = 1;
+        let moisture = DeadFuelMoisture::default();
+        let hour = HourFields::from_raw(
+            &RawHour {
+                u10_m_s: &vec![3.0; n],
+                v10_m_s: &vec![0.0; n],
+                t2m_k: &vec![300.0; n],
+                rh2m_pct: &vec![20.0; n],
+                tcc_pct: &vec![0.0; n],
+            },
+            &moisture,
+            n,
+        )
+        .unwrap();
+        let weather = WindowWeather {
+            hours: vec![hour; 3],
+            hours_utc: (0..3).map(|k| format!("hour {k}")).collect(),
+            fm100_pct: vec![5.0; n],
+            fm1000_pct: vec![7.0; n],
+        };
+        HourlyInputs::from_layers(
+            &HourlyLayers {
+                base: Layers {
+                    header: GridHeader {
+                        nx,
+                        ny,
+                        dx: 30.0,
+                        dy: 30.0,
+                        origin_x: 0.0,
+                        origin_y: 0.0,
+                        epsg: 5070,
+                        nodata: -9999.0,
+                    },
+                    fbfm40: &vec![102.0; n],
+                    slope_deg: &vec![0.0; n],
+                    aspect_deg: &vec![-1.0; n],
+                    water: &vec![0; n],
+                    ignited: &mask,
+                },
+                canopy_height_m: &vec![0.0; n],
+                canopy_base_height_m: &vec![0.0; n],
+                canopy_cover_pct: &vec![0.0; n],
+            },
+            weather,
+            &HourlyConfig::default(),
+        )
+        .unwrap()
+    }
+
+    fn panics(
+        _: &HourlyInputs,
+        _: &MemberDraw,
+        _: &mut Workspace,
+        _: &mut Vec<f32>,
+        _: u32,
+    ) -> Result<HourlyStats> {
+        panic!("boom")
+    }
+
+    fn fails(
+        _: &HourlyInputs,
+        _: &MemberDraw,
+        _: &mut Workspace,
+        _: &mut Vec<f32>,
+        _: u32,
+    ) -> Result<HourlyStats> {
+        Err(EnsembleError::Empty)
+    }
+
+    /// Cells of [`boundary_arrivals`] on the 21 x 21 grid: (row, column)
+    /// (0, 0), (10, 10) and (20, 20).
+    const CELL_A: usize = 0;
+    const CELL_B: usize = 220;
+    const CELL_C: usize = 440;
+
+    /// Arrival exactly 3600 s at `CELL_A`, the next f32 above 3600 s at
+    /// `CELL_B`, exactly 10800 s at `CELL_C`, and infinity elsewhere.
+    fn boundary_arrivals(
+        inputs: &HourlyInputs,
+        _: &MemberDraw,
+        _: &mut Workspace,
+        arrival_s: &mut Vec<f32>,
+        _: u32,
+    ) -> Result<HourlyStats> {
+        arrival_s.clear();
+        arrival_s.resize(inputs.inputs().len(), f32::INFINITY);
+        arrival_s[CELL_A] = S_PER_HOUR * 1.0;
+        arrival_s[CELL_B] = f32::from_bits(S_PER_HOUR.to_bits() + 1);
+        arrival_s[CELL_C] = S_PER_HOUR * 3.0;
+        Ok(HourlyStats::default())
+    }
+
+    #[test]
+    fn run_member_counts_arrivals_at_a_horizon_as_burned() {
+        let inputs = flat_gr2();
+        assert_eq!(inputs.inputs().len(), 441, "grid cells");
+        let b = f32::from_bits(S_PER_HOUR.to_bits() + 1);
+        assert!(b > S_PER_HOUR && b < S_PER_HOUR * 3.0, "B arrival {b}");
+        let acc =
+            HourlyAccumulator::new(&inputs, HourlyPerturbation::default(), 7, &[1, 3]).unwrap();
+        let summary = acc.run_member(&inputs, 0, &boundary_arrivals).unwrap();
+        assert_eq!(
+            summary.burned_cells,
+            vec![1, 3],
+            "burned cells per horizon [1 h, 3 h]: got {:?}",
+            summary.burned_cells
+        );
+        let counts = acc.into_counts();
+        let got: Vec<[u16; 3]> = counts
+            .iter()
+            .map(|c| [c[CELL_A], c[CELL_B], c[CELL_C]])
+            .collect();
+        assert_eq!(
+            got,
+            vec![[1, 0, 0], [1, 1, 1]],
+            "counts [A, B, C] per horizon [1 h, 3 h]: got {got:?}"
+        );
+    }
+
+    #[test]
+    fn run_member_guarded_maps_stop_panic_error_and_success() {
+        let inputs = flat_gr2();
+        let acc = HourlyAccumulator::new(&inputs, HourlyPerturbation::default(), 7, &[1]).unwrap();
+        let stopped = AtomicBool::new(true);
+        let running = AtomicBool::new(false);
+
+        let got = acc.run_member_guarded(&inputs, 0, &run_hourly_member, &stopped);
+        assert!(
+            matches!(got, GuardedMember::Skipped),
+            "stop set: expected Skipped, got {got:?}"
+        );
+
+        let got = acc.run_member_guarded(&inputs, 0, &panics, &running);
+        assert!(
+            matches!(&got, GuardedMember::Panicked(m) if m == "boom"),
+            "panicking member: expected Panicked(\"boom\"), got {got:?}"
+        );
+
+        let got = acc.run_member_guarded(&inputs, 0, &fails, &running);
+        assert!(
+            matches!(got, GuardedMember::Failed(EnsembleError::Empty)),
+            "failing member: expected Failed(Empty), got {got:?}"
+        );
+
+        let want = acc.run_member(&inputs, 3, &run_hourly_member).unwrap();
+        assert!(
+            want.burned_cells[0] > 1,
+            "member 3 burned {:?} cells: test is vacuous",
+            want.burned_cells
+        );
+        let got = acc.run_member_guarded(&inputs, 3, &run_hourly_member, &running);
+        assert!(
+            matches!(&got, GuardedMember::Done(s) if *s == want),
+            "running member: expected Done({want:?}), got {got:?}"
+        );
+    }
 }

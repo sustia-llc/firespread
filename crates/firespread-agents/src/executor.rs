@@ -1,10 +1,10 @@
 //! A rayon pool behind a tokio admission semaphore.
 
-use std::any::Any;
 use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 
+use firespread_ensemble::panic_message;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio_rayon::{AsyncThreadPool, rayon};
 
@@ -20,17 +20,6 @@ pub struct Executor {
     permits: Arc<Semaphore>,
     threads: usize,
     max_in_flight: usize,
-}
-
-/// The message of a panic payload: the `&str` or `String` it carries, or
-/// `"non-string panic payload"`.
-#[must_use]
-pub fn panic_message(payload: &(dyn Any + Send)) -> String {
-    payload
-        .downcast_ref::<&str>()
-        .map(|s| (*s).to_string())
-        .or_else(|| payload.downcast_ref::<String>().cloned())
-        .unwrap_or_else(|| "non-string panic payload".to_string())
 }
 
 impl Executor {

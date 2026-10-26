@@ -2,20 +2,19 @@
 //! aggregated as they finish.
 
 use std::future::Future;
-use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use firespread_ensemble::{
-    EnsembleError, HourlyCounts, HourlyInputs, HourlyMemberSummary, HourlyPerturbation,
-    HourlyStats, MemberDraw, S_PER_HOUR,
+    EnsembleError, GuardedMember, HourlyAccumulator, HourlyCounts, HourlyInputs,
+    HourlyMemberSummary, HourlyPerturbation, HourlyStats, MemberDraw,
 };
 use firespread_spread::Workspace;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
-use crate::executor::{Executor, panic_message};
+use crate::executor::Executor;
 use crate::{AgentError, Result};
 
 /// The seed, size, horizons and perturbations of one ensemble.
@@ -97,17 +96,9 @@ pub struct EnsembleOutcome {
     pub wall_s: f64,
 }
 
-type Slot = (Workspace, Vec<f32>);
-
 struct Shared<M> {
     inputs: Arc<HourlyInputs>,
-    perturbation: HourlyPerturbation,
-    seed: u64,
-    dx: f64,
-    horizon_max: u32,
-    horizons_s: Vec<f32>,
-    counts: Vec<AtomicU16>,
-    buffers: Mutex<Vec<Slot>>,
+    accumulator: HourlyAccumulator,
     stop: AtomicBool,
     member_fn: M,
 }
@@ -122,61 +113,22 @@ where
         u32,
     ) -> firespread_ensemble::Result<HourlyStats>,
 {
-    fn run(&self, member: u32) -> firespread_ensemble::Result<HourlyMemberSummary> {
-        let draw = self.perturbation.draw(self.seed, member, self.dx)?;
-        let slot = self
-            .buffers
-            .lock()
-            .map_err(|_| EnsembleError::BufferPoolPoisoned)?
-            .pop();
-        let (mut workspace, mut arrival) = slot.unwrap_or_else(|| (Workspace::new(), Vec::new()));
-        let stats = (self.member_fn)(
-            &self.inputs,
-            &draw,
-            &mut workspace,
-            &mut arrival,
-            self.horizon_max,
-        )?;
-        let n = self.inputs.inputs().len();
-        let horizon_max_s = self.horizons_s.iter().copied().fold(0.0, f32::max);
-        let mut burned_cells = vec![0_usize; self.horizons_s.len()];
-        for (cell, &t) in arrival.iter().enumerate() {
-            if t > horizon_max_s {
-                continue;
-            }
-            for (k, &h) in self.horizons_s.iter().enumerate() {
-                if t <= h {
-                    self.counts[k * n + cell].fetch_add(1, Ordering::Relaxed);
-                    burned_cells[k] += 1;
-                }
-            }
-        }
-        self.buffers
-            .lock()
-            .map_err(|_| EnsembleError::BufferPoolPoisoned)?
-            .push((workspace, arrival));
-        Ok(HourlyMemberSummary {
-            draw,
-            stats,
-            burned_cells,
-        })
-    }
-
-    /// Runs `member` unless the stop flag is set, with a panic mapped to
+    /// Runs `member` unless the stop flag is set, with an error mapped to
+    /// [`AgentError::MemberFailed`] and a panic to
     /// [`AgentError::MemberPanicked`].
     fn guarded(&self, member: u32) -> MemberOutcome {
-        if self.stop.load(Ordering::Acquire) {
-            return MemberOutcome::Skipped;
-        }
-        match catch_unwind(AssertUnwindSafe(|| self.run(member))) {
-            Ok(Ok(summary)) => MemberOutcome::Done(summary),
-            Ok(Err(source)) => {
+        match self
+            .accumulator
+            .run_member_guarded(&self.inputs, member, &self.member_fn, &self.stop)
+        {
+            GuardedMember::Done(summary) => MemberOutcome::Done(summary),
+            GuardedMember::Failed(source) => {
                 MemberOutcome::Failed(Arc::new(AgentError::MemberFailed { member, source }))
             }
-            Err(payload) => MemberOutcome::Failed(Arc::new(AgentError::MemberPanicked {
-                member,
-                message: panic_message(payload.as_ref()),
-            })),
+            GuardedMember::Panicked(message) => {
+                MemberOutcome::Failed(Arc::new(AgentError::MemberPanicked { member, message }))
+            }
+            GuardedMember::Skipped => MemberOutcome::Skipped,
         }
     }
 }
@@ -224,42 +176,22 @@ where
     P: FnMut(MemberProgress) -> Fut,
     Fut: Future<Output = ()>,
 {
-    let horizon_max = spec.validated_horizon()?;
-    let available = inputs.weather().hours.len();
-    if usize::try_from(horizon_max).unwrap_or(usize::MAX) > available {
-        return Err(AgentError::Ensemble {
-            stage: "validating the ensemble",
-            source: EnsembleError::TooFewHours {
-                available,
-                horizon_h: horizon_max,
+    spec.validated_horizon()?;
+    let accumulator =
+        HourlyAccumulator::new(&inputs, spec.perturbation, spec.seed, &spec.horizons_h).map_err(
+            |source| AgentError::Ensemble {
+                stage: match source {
+                    EnsembleError::InvalidPerturbation { .. } => "validating the perturbation",
+                    _ => "validating the ensemble",
+                },
+                source,
             },
-        });
-    }
-    let dx = f64::from(inputs.inputs().grid().dx_m());
-    spec.perturbation
-        .draw(spec.seed, 0, dx)
-        .map_err(|source| AgentError::Ensemble {
-            stage: "validating the perturbation",
-            source,
-        })?;
-    let n = inputs.inputs().len();
+        )?;
     let shared = Arc::new(Shared {
-        perturbation: spec.perturbation,
-        seed: spec.seed,
-        dx,
-        horizon_max,
-        horizons_s: spec
-            .horizons_h
-            .iter()
-            .map(|&h| h as f32 * S_PER_HOUR)
-            .collect(),
-        counts: (0..n * spec.horizons_h.len())
-            .map(|_| AtomicU16::new(0))
-            .collect(),
-        buffers: Mutex::new(Vec::new()),
+        inputs,
+        accumulator,
         stop: AtomicBool::new(false),
         member_fn,
-        inputs,
     });
 
     let members = spec.members;
@@ -320,11 +252,7 @@ where
         stage: "collecting the counts",
         message: "a member job still holds the shared state".to_string(),
     })?;
-    let flat: Vec<u16> = shared
-        .counts
-        .into_iter()
-        .map(AtomicU16::into_inner)
-        .collect();
+    let counts = shared.accumulator.into_counts();
     let mut completed = Vec::new();
     let mut done = Vec::new();
     for (member, summary) in summaries.into_iter().enumerate() {
@@ -338,7 +266,7 @@ where
         counts: HourlyCounts {
             members: u32::try_from(done.len()).unwrap_or(u32::MAX),
             horizons_h: spec.horizons_h.clone(),
-            counts: flat.chunks(n).map(<[u16]>::to_vec).collect(),
+            counts,
             summaries: done,
         },
         completed,

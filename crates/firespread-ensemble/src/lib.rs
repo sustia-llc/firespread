@@ -21,9 +21,9 @@ pub use ensemble::{Counts, MemberSummary, Perturbation, run_ensemble};
 pub use error::{EnsembleError, Result};
 pub use fbfm40::{BURNABLE_FBFM40, Fbfm40, classify_fbfm40};
 pub use hourly::{
-    HourlyConfig, HourlyCounts, HourlyInputs, HourlyLayers, HourlyMemberSummary,
-    HourlyPerturbation, HourlyStats, MemberDraw, N_MODELS, S_PER_HOUR, run_hourly_ensemble,
-    run_hourly_member, write_probability_cogs,
+    GuardedMember, HourlyAccumulator, HourlyConfig, HourlyCounts, HourlyInputs, HourlyLayers,
+    HourlyMemberSummary, HourlyPerturbation, HourlyStats, MemberDraw, N_MODELS, S_PER_HOUR,
+    panic_message, run_hourly_ensemble, run_hourly_member, write_probability_cogs,
 };
 pub use inputs::{Inputs, Layers, ROAD_BARRIER_WATER_CODE, apply_road_barriers};
 pub use member::{MemberBuffers, MemberFields, MemberParams, run_member};
