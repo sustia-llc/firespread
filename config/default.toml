@@ -1,0 +1,4 @@
+# Run settings for `firespread ensemble --config`. Road codes 1 to 4 of
+# `grid/roads.tif` (motorway or trunk, primary, secondary, tertiary) are
+# non-burnable.
+road_barrier_codes = [1, 2, 3, 4]
