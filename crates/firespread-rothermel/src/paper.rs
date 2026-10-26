@@ -120,9 +120,13 @@ pub(crate) fn gamma_prime(gamma_max: f64, ratio: f64, a: f64) -> f64 {
 }
 
 /// Moisture damping η_M = 1 − 2.59 r_M + 5.11 r_M² − 3.52 r_M³ with
-/// r_M = M_f/M_x (max 1.0) (p. 14; Table 6b p. 18, eq. 64, 65).
+/// r_M = M_f/M_x (p. 14; Table 6b p. 18, eq. 64, 65; Rothermel 1972 eq. 29).
+/// Returns exactly 0.0 for r_M ≥ 1, where the polynomial is 0 at r_M = 1.
 pub(crate) fn eta_m(mf: f64, mx: f64) -> f64 {
-    let r = (mf / mx).min(1.0);
+    let r = mf / mx;
+    if r >= 1.0 {
+        return 0.0;
+    }
     1.0 - 2.59 * r + 5.11 * r * r - 3.52 * r * r * r
 }
 
