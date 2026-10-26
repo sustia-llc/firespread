@@ -246,6 +246,55 @@ svg.chart .obs {
   stroke-width: 1.5;
 }
 
+button.help {
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--muted);
+  font: 600 10px/14px system-ui, sans-serif;
+  vertical-align: 1px;
+  cursor: help;
+}
+
+button.help:hover,
+button.help:focus-visible {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+svg.chart .help-target {
+  cursor: help;
+}
+
+svg.chart .help-target:focus-visible {
+  outline: 1px solid var(--ink);
+}
+
+#help-tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: 6px 8px;
+  border: 1px solid var(--hairline);
+  background: var(--paper-2);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+}
+
+#help-tip[hidden] {
+  display: none;
+}
+
+.leaflet-control-layers [data-help] {
+  cursor: help;
+}
+
 .leaflet-container {
   font-family: inherit;
   background: var(--paper);

@@ -19,9 +19,9 @@
       <div id="map"></div>
       <aside>
         <section id="panel-probability">
-          <h2>Burn probability</h2>
+          <h2>Burn probability <button type="button" class="help" data-help="ramp" aria-label="About the burn probability colors">?</button></h2>
           <div class="row">
-            <input id="hour-slider" type="range" min="0" max="0" step="1" value="0" aria-label="forecast hour" />
+            <input id="hour-slider" type="range" min="0" max="0" step="1" value="0" aria-label="forecast hour" data-help="slider" />
             <span id="hour-label" class="mono">-</span>
           </div>
           <div id="legend-bar" class="legend-bar"></div>
@@ -31,7 +31,7 @@
           <h2>Scorecard</h2>
           <div class="row">
             <label for="metric">metric</label>
-            <select id="metric">
+            <select id="metric" data-help="jaccard">
               <option value="jaccard" selected>jaccard</option>
               <option value="dice">dice</option>
               <option value="precision">precision</option>
@@ -42,7 +42,7 @@
           <div id="scorecard-chart"></div>
         </section>
         <section id="panel-area">
-          <h2>Burned area by hour</h2>
+          <h2>Burned area by hour <button type="button" class="help" data-help="areaChart" aria-label="About the burned area chart">?</button></h2>
           <div id="area-chart"></div>
         </section>
       </aside>
@@ -54,6 +54,7 @@
     <script src="vendor/georaster-layer-for-leaflet-4.1.2/georaster-layer-for-leaflet.min.js"></script>
     <script src="vendor/pmtiles-4.5.0/pmtiles.js"></script>
     <script src="vendor/protomaps-leaflet-5.1.0/protomaps-leaflet.js"></script>
+    <div id="help-tip" role="tooltip" hidden></div>
     <script src="app.js"></script>
   </body>
 </html>

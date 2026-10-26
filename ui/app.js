@@ -22,7 +22,97 @@
   var ENTRANTS = ["firespread", "persistence", "uniform_growth"];
   var SVG_NS = "http://www.w3.org/2000/svg";
 
+  // Popup text per `data-help` key. `{brier_radius}` is the Brier domain
+  // radius of the run's scorecard.
+  var HELP = {
+    // Entrants
+    firespread: "Our forecast. A cell counts as burned when at least half of the ensemble runs burn it by that hour.",
+    persistence: "The fire does not move. The forecast is the observed perimeter at the window start.",
+    uniform_growth: "The start perimeter pushed out evenly in every direction, at the growth rate of the 12 h before the window. It uses no wind, slope or fuel.",
+    // Metrics
+    jaccard: "The overlap of the forecast and observed burned areas, divided by their combined area. 1 is a perfect match and 0 is no overlap.",
+    dice: "Twice the overlap, divided by the sum of the two areas. It ranks forecasts like Jaccard but gives higher numbers.",
+    precision: "The share of the forecast burned area that really burned. A low value means the forecast burns too much.",
+    recall: "The share of the observed burned area that the forecast caught. A low value means the forecast burns too little.",
+    brier: "The mean squared error of the burn probability, over burnable cells within {brier_radius} of the start perimeter. 0 is perfect, and the baselines use only 0 or 1.",
+    containment: "The share of each forecast's burned cells inside the official final fire perimeter (WFIGS). A low value means the forecast burns land that never burned.",
+    // Map and charts
+    ramp: "The color shows the share of ensemble runs that burn a cell by the selected hour. Cells that no run burns have no color.",
+    slider: "Selects the hour of the map, counted from the window start. The scorecard scores only the hour of the observed perimeter.",
+    areaChart: "The burned area of the ensemble runs by hour. The band holds the middle 80 % of runs, the line is the median, and the dots are the observed areas at the window start and end.",
+    layerProbability: "Burn probability at the selected hour.",
+    layerObserved: "The observed fire perimeter at the end of the window, from NASA FEDS satellite data.",
+    layerHillshade: "Shaded terrain relief.",
+    layerVector: "Roads, places and water. This layer shows only when the basemap file is present.",
+  };
+
   var statusEl = document.getElementById("status");
+  var brierRadius = "the scoring radius";
+
+  function helpText(key) {
+    var t = HELP[key];
+    return t === undefined ? null : t.replace("{brier_radius}", brierRadius);
+  }
+
+  // Shows the text of the nearest `[data-help]` ancestor on hover, keyboard
+  // focus and tap; Escape or leaving the element hides it.
+  function initHelp() {
+    var tip = document.getElementById("help-tip");
+    var owner = null;
+    function hide() {
+      if (owner) owner.removeAttribute("aria-describedby");
+      owner = null;
+      tip.hidden = true;
+    }
+    function show(target) {
+      var s = helpText(target.getAttribute("data-help"));
+      if (s === null) return;
+      owner = target;
+      tip.textContent = s;
+      tip.hidden = false;
+      target.setAttribute("aria-describedby", "help-tip");
+      var r = target.getBoundingClientRect();
+      var w = tip.offsetWidth;
+      var h = tip.offsetHeight;
+      var left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
+      var top = r.bottom + 6;
+      if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 6);
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+    }
+    function helpTarget(e) {
+      return e.target && e.target.closest ? e.target.closest("[data-help]") : null;
+    }
+    document.addEventListener("mouseover", function (e) {
+      var t = helpTarget(e);
+      if (t && t !== owner) show(t);
+    });
+    document.addEventListener("mouseout", function (e) {
+      var t = helpTarget(e);
+      if (t && t === owner && !t.contains(e.relatedTarget)) hide();
+    });
+    document.addEventListener("focusin", function (e) {
+      var t = helpTarget(e);
+      if (t) show(t);
+    });
+    document.addEventListener("focusout", function (e) {
+      if (helpTarget(e) === owner) hide();
+    });
+    document.addEventListener("click", function (e) {
+      var t = helpTarget(e);
+      if (t) show(t);
+      else hide();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") hide();
+    });
+    window.addEventListener("scroll", hide, true);
+  }
+
+  // A layer-control label that carries popup text.
+  function layerName(label, key) {
+    return '<span tabindex="0" data-help="' + key + '">' + label + "</span>";
+  }
 
   function setStatus(text) {
     statusEl.textContent = text;
@@ -159,7 +249,7 @@
     var layer = protomapsL.leafletLayer({ url: archive, flavor: "light", lang: "en" });
     layer.setOpacity(PMTILES_OPACITY);
     layer.addTo(map);
-    layers.addOverlay(layer, "Vector basemap");
+    layers.addOverlay(layer, layerName("Vector basemap", "layerVector"));
   }
 
   async function addHillshade(map, layers) {
@@ -168,7 +258,7 @@
       var layer = hillshadeLayer(g);
       layer.addTo(map);
       layer.bringToBack();
-      layers.addOverlay(layer, "Hillshade");
+      layers.addOverlay(layer, layerName("Hillshade", "layerHillshade"));
     } catch (e) {
       console.info("[firespread] hillshade skipped: " + e.message);
     }
@@ -192,7 +282,7 @@
     });
     var layer = L.layerGroup([casing, stroke]);
     layer.addTo(map);
-    layers.addOverlay(layer, "Observed perimeter");
+    layers.addOverlay(layer, layerName("Observed perimeter", "layerObserved"));
   }
 
   async function addProbability(map, layers, manifest) {
@@ -218,11 +308,18 @@
       })
     );
     var group = L.layerGroup().addTo(map);
-    layers.addOverlay(group, "Burn probability");
+    layers.addOverlay(group, layerName("Burn probability", "layerProbability"));
+    // Every hour stays on the map so its tiles are drawn once; the slider
+    // shows one hour by opacity.
     var built = rasters.map(probabilityLayer);
+    built.forEach(function (layer) {
+      layer.setOpacity(0);
+      group.addLayer(layer);
+    });
     function show(i) {
-      group.clearLayers();
-      group.addLayer(built[i]);
+      built.forEach(function (layer, k) {
+        layer.setOpacity(k === i ? OVERLAY_OPACITY : 0);
+      });
       label.textContent = "h+" + hours[i].h;
     }
     slider.max = String(hours.length - 1);
@@ -273,7 +370,14 @@
     var table = document.createElement("table");
     table.className = "containment";
     var cap = document.createElement("caption");
-    cap.textContent = "Inside the final perimeter (WFIGS): share of forecast cells";
+    cap.textContent = "Inside the final perimeter (WFIGS): share of forecast cells ";
+    var help = document.createElement("button");
+    help.type = "button";
+    help.className = "help";
+    help.setAttribute("data-help", "containment");
+    help.setAttribute("aria-label", "About the final perimeter table");
+    help.textContent = "?";
+    cap.appendChild(help);
     table.appendChild(cap);
     rows.forEach(function (r) {
       var tr = document.createElement("tr");
@@ -346,10 +450,10 @@
     el("line", { class: "axis", x1: m.l, x2: W - m.r, y1: y(0), y2: y(0) }, svg);
     var lx = m.l;
     ENTRANTS.forEach(function (e) {
-      el("rect", { class: "s-" + e, x: lx, y: 6, width: 10, height: 10 }, svg);
-      var t = text(svg, lx + 14, 15, e);
+      var g = el("g", { class: "help-target", tabindex: "0", "data-help": e }, svg);
+      el("rect", { class: "s-" + e, x: lx, y: 6, width: 10, height: 10 }, g);
+      text(g, lx + 14, 15, e);
       lx += 14 + e.length * 6.2 + 12;
-      return t;
     });
     text(svg, W - m.r, H - 2, "forecast horizon", { class: "axis-label", "text-anchor": "end" });
   }
@@ -462,7 +566,10 @@
       notScored(scEl);
       metricEl.disabled = true;
     } else {
+      var radius = card.brier_domain && card.brier_domain.radius_m;
+      if (radius > 0) brierRadius = radius / 1000 + " km";
       var redraw = function () {
+        metricEl.setAttribute("data-help", metricEl.value);
         drawScorecard(scEl, card, metricEl.value);
         drawContainment(scEl, card);
       };
@@ -479,6 +586,7 @@
   }
 
   async function main() {
+    initHelp();
     drawLegend();
     var panels = loadPanels();
     var manifest = await fetchOrNull("run/manifest.json", "json");
