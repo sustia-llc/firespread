@@ -1,4 +1,4 @@
-//! Single-band `f32` GeoTIFF reader on the pure-Rust `tiff` decoder.
+//! Single-band `f32` and `u8` GeoTIFF readers on the pure-Rust `tiff` decoder.
 
 use std::fs::File;
 use std::io::BufReader;
@@ -7,7 +7,7 @@ use std::path::Path;
 use tiff::decoder::{ChunkType, Decoder};
 use tiff::tags::Tag;
 
-use crate::{Grid, GridError, GridHeader, Result};
+use crate::{Grid, GridError, GridHeader, MaskGrid, Result};
 
 pub(crate) const TAG_MODEL_PIXEL_SCALE: u16 = 33550;
 pub(crate) const TAG_MODEL_TIEPOINT: u16 = 33922;
@@ -25,8 +25,47 @@ pub(crate) const COMPRESSION_NONE: u16 = 1;
 pub(crate) const COMPRESSION_DEFLATE: u16 = 8;
 const COMPRESSION_OLD_DEFLATE: u16 = 32946;
 pub(crate) const SAMPLE_FORMAT_IEEE_FP: u16 = 3;
+const SAMPLE_FORMAT_UINT: u16 = 1;
 
 type TiffDecoder = Decoder<BufReader<File>>;
+
+/// A cell type the reader decodes from native-endian chunk bytes.
+trait Sample: Copy + Default {
+    /// TIFF BitsPerSample of this type.
+    const BITS: u16;
+    /// TIFF SampleFormat of this type.
+    const FORMAT: u16;
+    /// Bytes per sample.
+    const BYTES: usize;
+    /// Human-readable name used in `UnsupportedSampleFormat`.
+    const EXPECTED: &'static str;
+    /// Decodes `dst.len()` samples from `src`, which holds `dst.len() * BYTES` bytes.
+    fn decode_row(src: &[u8], dst: &mut [Self]);
+}
+
+impl Sample for f32 {
+    const BITS: u16 = 32;
+    const FORMAT: u16 = SAMPLE_FORMAT_IEEE_FP;
+    const BYTES: usize = 4;
+    const EXPECTED: &'static str = "32-bit IEEE float (3)";
+    fn decode_row(src: &[u8], dst: &mut [Self]) {
+        for (cell, word) in dst.iter_mut().zip(src.as_chunks::<4>().0) {
+            *cell = f32::from_ne_bytes(*word);
+        }
+    }
+}
+
+impl Sample for u8 {
+    const BITS: u16 = 8;
+    const FORMAT: u16 = SAMPLE_FORMAT_UINT;
+    const BYTES: usize = 1;
+    const EXPECTED: &'static str = "8-bit unsigned integer (1)";
+    fn decode_row(src: &[u8], dst: &mut [Self]) {
+        for (cell, byte) in dst.iter_mut().zip(src) {
+            *cell = *byte;
+        }
+    }
+}
 
 /// Reads the header of a single-band `f32` GeoTIFF after validating its layout.
 ///
@@ -34,7 +73,7 @@ type TiffDecoder = Decoder<BufReader<File>>;
 pub fn read_geotiff_header(path: impl AsRef<Path>) -> Result<GridHeader> {
     let path = path.as_ref();
     let mut dec = open(path)?;
-    header_from(&mut dec, path)
+    header_from::<f32>(&mut dec, path)
 }
 
 /// Reads a single-band `f32` GeoTIFF into a [`Grid`].
@@ -47,9 +86,22 @@ pub fn read_geotiff_header(path: impl AsRef<Path>) -> Result<GridHeader> {
 pub fn read_geotiff(path: impl AsRef<Path>) -> Result<Grid> {
     let path = path.as_ref();
     let mut dec = open(path)?;
-    let header = header_from(&mut dec, path)?;
+    let header = header_from::<f32>(&mut dec, path)?;
     let data = read_cells(&mut dec, path, &header)?;
     Ok(Grid { header, data })
+}
+
+/// Reads a single-band 8-bit unsigned GeoTIFF into a [`MaskGrid`].
+///
+/// Accepts BitsPerSample 8 with SampleFormat 1 or absent, in the same layouts,
+/// compressions and georeferencing as [`read_geotiff`]; `header.nodata` is the
+/// GDAL_NODATA value parsed as `f32`.
+pub fn read_geotiff_u8(path: impl AsRef<Path>) -> Result<MaskGrid> {
+    let path = path.as_ref();
+    let mut dec = open(path)?;
+    let header = header_from::<u8>(&mut dec, path)?;
+    let data = read_cells(&mut dec, path, &header)?;
+    Ok(MaskGrid { header, data })
 }
 
 fn open(path: &Path) -> Result<TiffDecoder> {
@@ -67,8 +119,8 @@ fn tiff_err(path: &Path, source: tiff::TiffError) -> GridError {
     }
 }
 
-fn header_from(dec: &mut TiffDecoder, path: &Path) -> Result<GridHeader> {
-    check_band_layout(dec, path)?;
+fn header_from<T: Sample>(dec: &mut TiffDecoder, path: &Path) -> Result<GridHeader> {
+    check_band_layout::<T>(dec, path)?;
     let (width, height) = dec.dimensions().map_err(|e| tiff_err(path, e))?;
 
     if dec
@@ -145,7 +197,7 @@ fn header_from(dec: &mut TiffDecoder, path: &Path) -> Result<GridHeader> {
     })
 }
 
-fn check_band_layout(dec: &mut TiffDecoder, path: &Path) -> Result<()> {
+fn check_band_layout<T: Sample>(dec: &mut TiffDecoder, path: &Path) -> Result<()> {
     let samples = dec
         .find_tag_unsigned::<u16>(Tag::SamplesPerPixel)
         .map_err(|e| tiff_err(path, e))?
@@ -158,11 +210,12 @@ fn check_band_layout(dec: &mut TiffDecoder, path: &Path) -> Result<()> {
     }
     let bits = first_u16(dec, path, Tag::BitsPerSample)?.unwrap_or(1);
     let format = first_u16(dec, path, Tag::SampleFormat)?.unwrap_or(1);
-    if bits != 32 || format != SAMPLE_FORMAT_IEEE_FP {
+    if bits != T::BITS || format != T::FORMAT {
         return Err(GridError::UnsupportedSampleFormat {
             path: path.to_path_buf(),
             bits,
             format,
+            expected: T::EXPECTED,
         });
     }
     let code = dec
@@ -290,9 +343,13 @@ fn nodata_tag(dec: &mut TiffDecoder, path: &Path) -> Result<f32> {
         })
 }
 
-fn read_cells(dec: &mut TiffDecoder, path: &Path, header: &GridHeader) -> Result<Vec<f32>> {
+fn read_cells<T: Sample>(
+    dec: &mut TiffDecoder,
+    path: &Path,
+    header: &GridHeader,
+) -> Result<Vec<T>> {
     let nx = header.nx;
-    let mut data = vec![0.0_f32; nx * header.ny];
+    let mut data = vec![T::default(); nx * header.ny];
     let (cw, ch) = dec.chunk_dimensions();
     let (cw, ch) = (cw as usize, ch as usize);
     let across = nx.div_ceil(cw);
@@ -301,22 +358,19 @@ fn read_cells(dec: &mut TiffDecoder, path: &Path, header: &GridHeader) -> Result
         ChunkType::Strip => dec.strip_count(),
     }
     .map_err(|e| tiff_err(path, e))?;
-    let mut buf = vec![0_u8; cw * ch * 4];
+    let mut buf = vec![0_u8; cw * ch * T::BYTES];
     for index in 0..chunks {
         let (w, h) = dec.chunk_data_dimensions(index);
         let (w, h) = (w as usize, h as usize);
-        let bytes = &mut buf[..w * h * 4];
+        let bytes = &mut buf[..w * h * T::BYTES];
         dec.read_chunk_bytes(index, bytes)
             .map_err(|e| tiff_err(path, e))?;
         let i = index as usize;
         let row0 = (i / across) * ch;
         let col0 = (i % across) * cw;
-        for (r, src_row) in bytes.chunks_exact(w * 4).enumerate() {
+        for (r, src_row) in bytes.chunks_exact(w * T::BYTES).enumerate() {
             let start = (row0 + r) * nx + col0;
-            let dst = &mut data[start..start + w];
-            for (cell, word) in dst.iter_mut().zip(src_row.as_chunks::<4>().0) {
-                *cell = f32::from_ne_bytes(*word);
-            }
+            T::decode_row(src_row, &mut data[start..start + w]);
         }
     }
     Ok(data)

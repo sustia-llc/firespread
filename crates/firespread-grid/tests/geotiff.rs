@@ -5,7 +5,8 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use firespread_grid::{
-    Grid, GridError, GridHeader, TILE_SIZE, read_geotiff, read_geotiff_header, write_cog,
+    Grid, GridError, GridHeader, TILE_SIZE, read_geotiff, read_geotiff_header, read_geotiff_u8,
+    write_cog,
 };
 use serde_json::Value;
 use tiff::decoder::{ChunkType, Decoder};
@@ -93,6 +94,155 @@ fn fixtures_have_partial_edge_tiles() {
     assert_eq!(dec.chunk_dimensions(), (16, 16));
     assert_eq!(dec.tile_count().unwrap(), 9);
     assert_eq!(dec.chunk_data_dimensions(8), (8, 8));
+}
+
+const F32_EXPECTED: &str = "32-bit IEEE float (3)";
+const U8_EXPECTED: &str = "8-bit unsigned integer (1)";
+
+#[test]
+fn reads_roads_u8_fixture_exactly() {
+    let (want_header, values) = sidecar("roads_40.json");
+    assert_eq!(
+        want_header,
+        GridHeader {
+            nx: 40,
+            ny: 40,
+            dx: 30.0,
+            dy: 30.0,
+            origin_x: -867_780.0,
+            origin_y: 1_499_820.0,
+            epsg: 5070,
+            nodata: 255.0,
+        },
+        "roads_40.json header"
+    );
+    let want: Vec<u8> = values
+        .iter()
+        .map(|&v| {
+            assert!(
+                v.fract() == 0.0 && (0.0..=255.0).contains(&v),
+                "sidecar value {v} is not a u8"
+            );
+            v as u8
+        })
+        .collect();
+    let nx = want_header.nx;
+    let edge_nonzero = want
+        .iter()
+        .enumerate()
+        .filter(|&(i, &v)| v != 0 && (i / nx >= 32 || i % nx >= 32))
+        .count();
+    assert!(
+        edge_nonzero > 0,
+        "fixture has no nonzero cell in the partial edge tiles (row or col >= 32)"
+    );
+
+    let mask = read_geotiff_u8(fixture("roads_40.tif")).unwrap();
+    assert_eq!(mask.header, want_header, "roads_40 header");
+    assert_bytes_eq(&mask.data, &want, nx, "roads_40");
+}
+
+fn assert_bytes_eq(got: &[u8], want: &[u8], nx: usize, what: &str) {
+    assert_eq!(got.len(), want.len(), "{what}: length");
+    for (i, (g, w)) in got.iter().zip(want).enumerate() {
+        assert_eq!(
+            g,
+            w,
+            "{what}: cell {i} (row {}, col {}) got {g}, want {w}",
+            i / nx,
+            i % nx
+        );
+    }
+}
+
+#[test]
+fn roads_fixture_has_partial_edge_tiles() {
+    let mut dec = Decoder::new(fs::File::open(fixture("roads_40.tif")).unwrap()).unwrap();
+    assert_eq!(dec.get_chunk_type(), ChunkType::Tile);
+    assert_eq!(dec.chunk_dimensions(), (16, 16));
+    assert_eq!(dec.tile_count().unwrap(), 9);
+    assert_eq!(dec.chunk_data_dimensions(8), (8, 8));
+}
+
+#[test]
+fn u8_reader_rejects_f32_and_f32_reader_rejects_u8() {
+    let e = read_geotiff_u8(fixture("FBFM40_40.tif")).unwrap_err();
+    assert!(
+        matches!(e, GridError::UnsupportedSampleFormat { bits: 32, format: 3, expected, .. }
+            if expected == U8_EXPECTED),
+        "{e:?}"
+    );
+    let e = err_of(&fixture("roads_40.tif"));
+    assert!(
+        matches!(e, GridError::UnsupportedSampleFormat { bits: 8, format: 1, expected, .. }
+            if expected == F32_EXPECTED),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn u8_reader_rejects_signed_and_wide_integers() {
+    let n = (W * H) as usize;
+    let cases = [
+        (
+            stripped::<colortype::GrayI8>(
+                "i8.tif",
+                &vec![0_i8; n],
+                Compression::Uncompressed,
+                7,
+                &good_geo(),
+            ),
+            8,
+            2,
+        ),
+        (
+            stripped::<colortype::Gray16>(
+                "u16_for_u8.tif",
+                &vec![0_u16; n],
+                Compression::Uncompressed,
+                7,
+                &good_geo(),
+            ),
+            16,
+            1,
+        ),
+    ];
+    for (path, want_bits, want_format) in cases {
+        let e = read_geotiff_u8(&path).unwrap_err();
+        assert!(
+            matches!(e, GridError::UnsupportedSampleFormat { bits, format, .. }
+                if bits == want_bits && format == want_format),
+            "{}: {e:?}",
+            path.display()
+        );
+    }
+}
+
+fn u8_cells() -> Vec<u8> {
+    (0..W * H).map(|i| ((i * 37) % 256) as u8).collect()
+}
+
+#[test]
+fn reads_stripped_u8_deflate_with_partial_last_strip() {
+    let mut geo = good_geo();
+    geo.nodata = Some("255".to_string());
+    let path = stripped::<colortype::Gray8>(
+        "strip_u8_deflate.tif",
+        &u8_cells(),
+        Compression::Deflate(DeflateLevel::Balanced),
+        5,
+        &geo,
+    );
+    let mut dec = Decoder::new(fs::File::open(&path).unwrap()).unwrap();
+    assert_eq!(dec.get_tag_u32(Tag::Compression).unwrap(), 8);
+    assert_eq!(dec.get_chunk_type(), ChunkType::Strip);
+    assert_eq!(dec.strip_count().unwrap(), 5);
+    assert_eq!(dec.chunk_data_dimensions(4), (W, 3));
+    let mask = read_geotiff_u8(&path).unwrap();
+    let mut want_header = expected_header();
+    want_header.nodata = 255.0;
+    assert_eq!(mask.header, want_header);
+    assert_bytes_eq(&mask.data, &u8_cells(), W as usize, "stripped u8 deflate");
 }
 
 fn header_300x257() -> GridHeader {

@@ -3,7 +3,9 @@
 //!
 //! A [`Grid`] is a single band of `f32` cells on a north-up projected raster,
 //! stored row-major with the north row first. [`read_geotiff`] loads one from a
-//! single-band `f32` GeoTIFF, [`write_cog`] writes one as a tiled,
+//! single-band `f32` GeoTIFF, [`read_geotiff_u8`] loads a [`MaskGrid`] of `u8`
+//! cells from a single-band 8-bit unsigned GeoTIFF, [`write_cog`] writes a
+//! [`Grid`] as a tiled,
 //! Deflate-compressed GeoTIFF, and [`Manifest`] records the inputs and outputs
 //! of one forecast run.
 
@@ -16,7 +18,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 pub use cog::{TILE_SIZE, write_cog};
-pub use geotiff::{read_geotiff, read_geotiff_header};
+pub use geotiff::{read_geotiff, read_geotiff_header, read_geotiff_u8};
 pub use manifest::{ForecastWindow, MANIFEST_VERSION, Manifest, WindLimitPolicy};
 
 /// Errors raised by grid construction, indexing, GeoTIFF I/O and manifest I/O.
@@ -57,14 +59,14 @@ pub enum GridError {
     /// The image has more than one sample per pixel.
     #[error("{path} has {samples} samples per pixel, expected 1")]
     NotSingleBand { path: PathBuf, samples: u16 },
-    /// The sample type is not 32-bit IEEE floating point.
-    #[error(
-        "{path} has {bits}-bit samples of SampleFormat {format}, expected 32-bit IEEE float (3)"
-    )]
+    /// The sample type differs from the one the reader decodes: 32-bit IEEE
+    /// floating point for [`read_geotiff`], 8-bit unsigned for [`read_geotiff_u8`].
+    #[error("{path} has {bits}-bit samples of SampleFormat {format}, expected {expected}")]
     UnsupportedSampleFormat {
         path: PathBuf,
         bits: u16,
         format: u16,
+        expected: &'static str,
     },
     /// The compression scheme is neither none (1) nor Deflate (8 or 32946).
     #[error("{path} uses TIFF compression {code}, expected 1, 8 or 32946")]
@@ -204,6 +206,13 @@ impl Grid {
         }
         self.data.get(row * nx + col).copied().ok_or(out)
     }
+}
+
+/// A single band of `u8` cells, row-major with the north row first.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaskGrid {
+    pub header: GridHeader,
+    pub data: Vec<u8>,
 }
 
 pub(crate) fn check_data_len(header: &GridHeader, found: usize) -> Result<()> {
