@@ -10,7 +10,7 @@ mod paper;
 pub use ellipse::{ellipse_rate, length_to_breadth};
 pub use error::{Result, RothermelError};
 pub use firespread_fuel::Category;
-use firespread_fuel::{FuelClass, FuelModelSi, Moistures, units};
+use firespread_fuel::{ClassKind, FuelClass, FuelModelSi, Moistures, units};
 
 /// One fuel class in SI, with its particle properties.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -222,13 +222,13 @@ pub struct DirectionalOutput {
     pub phi_e: f64,
     /// Effective midflame wind speed U_E of the resultant, m/s.
     pub effective_wind_m_s: f64,
-    /// Length-to-breadth ratio LB (eq. [13]).
+    /// Length-to-breadth ratio LB (eq. \[13\]).
     pub length_to_breadth: f64,
-    /// Head-to-back ratio HB (eq. [14]).
+    /// Head-to-back ratio HB (eq. \[14\]).
     pub head_to_back: f64,
     /// Backing rate of spread R/HB, m/s.
     pub backing_ros_m_s: f64,
-    /// Flanking rate of spread, the semi-minor axis a of eq. [15], m/s.
+    /// Flanking rate of spread, the semi-minor axis a of eq. \[15\], m/s.
     pub flanking_ros_m_s: f64,
     /// Eccentricity e = (1 − 1/LB²)^0.5 of the ellipse.
     pub eccentricity: f64,
@@ -243,10 +243,11 @@ pub struct DirectionalOutput {
 }
 
 /// Runs the final model of Andrews (2018) Table 6 with wind and slope
-/// combined as vectors (Finney 1998 RMRS-RP-4 p. 6 eqs. [11], [12]) under the
-/// given wind policy, and fits the RMRS-RP-4 p. 7 ellipse (eqs. [13]-[17])
-/// at the resultant's effective wind. The vectors are summed in the
-/// horizontal plane, not projected onto the slope plane as RP-4 eq. [6] does.
+/// combined as vectors (Finney 1998 RMRS-RP-4 p. 6 eqs. \[11\], \[12\]) under
+/// the given wind policy, and fits the RMRS-RP-4 p. 7 ellipse (eqs.
+/// \[13\]-\[17\]) at the resultant's effective wind. The vectors are summed in
+/// the horizontal plane, not projected onto the slope plane as RP-4 eq. \[6\]
+/// does.
 /// When the resultant is zero the azimuth is the upslope azimuth if the slope
 /// is positive, else the wind azimuth if the wind is positive, else 0.
 pub fn spread_directional(
@@ -299,6 +300,88 @@ impl DirectionalModel {
     pub fn eval(&self, env: &DirectionalEnvironment) -> Result<DirectionalOutput> {
         let out = self.inner.eval(&dir_env_to_paper(env))?;
         Ok(directional_output_to_si(&out))
+    }
+}
+
+/// Dead fuel moistures, fractions of oven-dry weight.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DeadMoistures {
+    pub dead_1h: f64,
+    pub dead_10h: f64,
+    pub dead_100h: f64,
+}
+
+/// The moisture a class of a [`MoistureModel`] takes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum MoistureSlot {
+    Dead1h,
+    Dead10h,
+    Dead100h,
+    Fixed(f64),
+}
+
+/// The [`DirectionalModel`] of one fuel model under one wind policy at fixed
+/// live moistures, for any dead moistures, with every term that depends on
+/// neither the dead moistures nor wind or slope computed once, in
+/// [`MoistureModel::new`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct MoistureModel {
+    terms: paper::DirTerms,
+    slots: Vec<MoistureSlot>,
+}
+
+impl MoistureModel {
+    /// The model of `model` under `limit` with live herbaceous and live woody
+    /// moistures `moistures.live_herb` and `moistures.live_woody`; the live
+    /// herbaceous moisture also fixes the dynamic transfer. The dead fields
+    /// of `moistures` serve only to validate the bed.
+    ///
+    /// # Errors
+    /// [`RothermelError::Fuel`] for the errors of
+    /// [`firespread_fuel::fuel_classes`], and the bed errors of
+    /// [`DirectionalModel::new`].
+    pub fn new(model: &FuelModelSi, moistures: &Moistures, limit: WindLimit) -> Result<Self> {
+        let classes = firespread_fuel::fuel_classes(model, moistures)?;
+        let slots = classes
+            .iter()
+            .map(|c| match c.kind {
+                ClassKind::Dead1h | ClassKind::DeadHerb => MoistureSlot::Dead1h,
+                ClassKind::Dead10h => MoistureSlot::Dead10h,
+                ClassKind::Dead100h => MoistureSlot::Dead100h,
+                ClassKind::LiveHerb | ClassKind::LiveWoody => MoistureSlot::Fixed(c.moisture),
+            })
+            .collect();
+        let paper_classes: Vec<paper::Class> = classes
+            .iter()
+            .map(|c| SpreadClass::from_fuel(c, model).to_paper())
+            .collect();
+        let bed = paper::Bed {
+            classes: &paper_classes,
+            depth_ft: units::m_to_ft(model.depth_m),
+            dead_mx: model.dead_mx,
+        };
+        let terms = paper::DirTerms::new(&bed, limit)?;
+        debug_assert_eq!(terms.n_classes(), paper_classes.len());
+        Ok(Self { terms, slots })
+    }
+
+    /// Equal to `DirectionalModel::new(&FuelBed::from_model(model, m),
+    /// limit)` for the `model` and `limit` of [`MoistureModel::new`] and `m`
+    /// the moistures of `new` with its dead fields replaced by `dead`. The
+    /// dynamically transferred herbaceous class takes `dead.dead_1h`.
+    ///
+    /// # Errors
+    /// [`RothermelError::InvalidClass`] when a dead moisture is negative or
+    /// not finite, and [`RothermelError::ZeroHeatSink`] when the heat sink is
+    /// not positive.
+    pub fn at(&self, dead: &DeadMoistures) -> Result<DirectionalModel> {
+        let inner = self.terms.at(|index| match self.slots[index] {
+            MoistureSlot::Dead1h => dead.dead_1h,
+            MoistureSlot::Dead10h => dead.dead_10h,
+            MoistureSlot::Dead100h => dead.dead_100h,
+            MoistureSlot::Fixed(m) => m,
+        })?;
+        Ok(DirectionalModel { inner })
     }
 }
 

@@ -229,25 +229,59 @@ fn subclass(sigma: f64) -> Option<u8> {
 /// W = Σ_j (w0)_1j exp(−138/σ_1j) / Σ_j (w0)_2j exp(−500/σ_2j) and fine dead
 /// moisture M_f,dead = Σ_j (M_f)_1j (w0)_1j exp(−138/σ_1j) / Σ_j (w0)_1j
 /// exp(−138/σ_1j) (Table 6a p. 17, Albini p. 16 replacing eq. 88).
-pub(crate) fn live_mx(dead: &[&Class], live: &[&Class], mx1: f64) -> f64 {
-    let dead_fine: f64 = dead
-        .iter()
-        .map(|c| c.load_lb_ft2 * (-138.0 / c.sav_per_ft).exp())
-        .sum();
-    let live_fine: f64 = live
-        .iter()
-        .map(|c| c.load_lb_ft2 * (-500.0 / c.sav_per_ft).exp())
-        .sum();
-    if dead_fine <= 0.0 || live_fine <= 0.0 {
-        return mx1;
+#[cfg(test)]
+fn live_mx(dead: &[&Class], live: &[&Class], mx1: f64) -> f64 {
+    LiveMxTerms::new(dead, live).map_or(mx1, |t| t.eval(|j| dead[j].moisture, mx1))
+}
+
+/// The moisture-independent terms of [`live_mx`]: per dead class its load
+/// (w0)_1j and exp(−138/σ_1j), the dead fine load and 2.9 W. `None` when the
+/// dead or live fine load is not positive, where (M_x)_2 = (M_x)_1.
+#[derive(Debug, Clone, PartialEq)]
+struct LiveMxTerms {
+    dead_load: Vec<f64>,
+    dead_exp: Vec<f64>,
+    dead_fine: f64,
+    two_nine_w: f64,
+}
+
+impl LiveMxTerms {
+    fn new(dead: &[&Class], live: &[&Class]) -> Option<Self> {
+        let dead_exp: Vec<f64> = dead.iter().map(|c| (-138.0 / c.sav_per_ft).exp()).collect();
+        let dead_fine: f64 = dead
+            .iter()
+            .zip(&dead_exp)
+            .map(|(c, e)| c.load_lb_ft2 * e)
+            .sum();
+        let live_fine: f64 = live
+            .iter()
+            .map(|c| c.load_lb_ft2 * (-500.0 / c.sav_per_ft).exp())
+            .sum();
+        if dead_fine <= 0.0 || live_fine <= 0.0 {
+            return None;
+        }
+        let w = dead_fine / live_fine;
+        Some(Self {
+            dead_load: dead.iter().map(|c| c.load_lb_ft2).collect(),
+            dead_exp,
+            dead_fine,
+            two_nine_w: 2.9 * w,
+        })
     }
-    let w = dead_fine / live_fine;
-    let mf_dead = dead
-        .iter()
-        .map(|c| c.moisture * c.load_lb_ft2 * (-138.0 / c.sav_per_ft).exp())
-        .sum::<f64>()
-        / dead_fine;
-    (2.9 * w * (1.0 - mf_dead / mx1) - 0.226).max(mx1)
+
+    /// (M_x)_2 with dead class `j` (in dead class order) at moisture
+    /// `moisture(j)`.
+    fn eval(&self, moisture: impl Fn(usize) -> f64, mx1: f64) -> f64 {
+        let mf_dead = self
+            .dead_load
+            .iter()
+            .zip(&self.dead_exp)
+            .enumerate()
+            .map(|(j, (load, e))| moisture(j) * load * e)
+            .sum::<f64>()
+            / self.dead_fine;
+        (self.two_nine_w * (1.0 - mf_dead / mx1) - 0.226).max(mx1)
+    }
 }
 
 fn check(field: &'static str, value: f64, positive: bool) -> Result<f64> {
@@ -300,8 +334,6 @@ struct CategoryValues {
     h: f64,
     /// (η_s)_i from (S_e)_i = Σ_j f_ij (S_e)_ij (eq. 62, 63).
     eta_s: f64,
-    /// (M_f)_i = Σ_j f_ij (M_f)_ij (eq. 66).
-    mf: f64,
     /// σ_i = Σ_j f_ij σ_ij (eq. 72).
     sigma: f64,
 }
@@ -338,7 +370,6 @@ fn category_values(classes: &[&Class], a_i: f64, a_t: f64) -> CategoryValues {
         wn,
         h: weighted(&|c| c.heat_btu_lb),
         eta_s: eta_s(weighted(&|c| c.s_e)),
-        mf: weighted(&|c| c.moisture),
         sigma: weighted(&|c| c.sav_per_ft),
         f_ij,
     }
@@ -605,38 +636,7 @@ pub(crate) struct DirModel {
 impl DirModel {
     /// Validates the bed and computes its wind- and slope-independent terms.
     pub(crate) fn new(bed: &Bed<'_>, limit: WindLimit) -> Result<Self> {
-        let Base {
-            r0,
-            ir,
-            beta,
-            ratio,
-            c,
-            b,
-            e,
-            u_max,
-            tr,
-            ..
-        } = base(
-            bed,
-            &Env {
-                wind_ft_min: 0.0,
-                slope_tan: 0.0,
-            },
-        )?;
-        Ok(Self {
-            limit,
-            r0,
-            ir,
-            c,
-            b,
-            inv_b: 1.0 / b,
-            ratio_neg_e: ratio.powf(-e),
-            ratio_e: ratio.powf(e),
-            phi_s_coef: 5.275 * beta.powf(-0.3),
-            u_max,
-            phi_w_at_u_max: phi_w(c, b, e, u_max, ratio),
-            ir_tr: ir * tr,
-        })
+        DirTerms::new(bed, limit)?.at(|index| bed.classes[index].moisture)
     }
 
     /// `spread_directional` of the bed this model was built from, at `env`.
@@ -687,111 +687,301 @@ impl DirModel {
 /// Validates the bed and environment and computes the wind-independent part
 /// of the final model, Table 6a-6c (pp. 17-19).
 fn base(bed: &Bed<'_>, env: &Env) -> Result<Base> {
-    let depth = check("depth", bed.depth_ft, true)?;
-    let mx1 = check("dead moisture of extinction", bed.dead_mx, true)?;
+    check("depth", bed.depth_ft, true)?;
+    check("dead moisture of extinction", bed.dead_mx, true)?;
     let wind = check("wind", env.wind_ft_min, false)?;
     let slope_tan = check("slope", env.slope_tan, false)?;
-    for (index, c) in bed.classes.iter().enumerate() {
-        validate_class(index, c)?;
-    }
-
-    let dead: Vec<&Class> = bed
-        .classes
-        .iter()
-        .filter(|c| c.category == Category::Dead)
-        .collect();
-    let live: Vec<&Class> = bed
-        .classes
-        .iter()
-        .filter(|c| c.category == Category::Live)
-        .collect();
-    // A_ij = σ_ij (w0)_ij / (ρ_p)_ij (eq. 53); A_i = Σ_j A_ij (eq. 54); A_T = Σ_i A_i (eq. 55).
-    let area = |cs: &[&Class]| -> f64 {
-        cs.iter()
-            .map(|c| c.sav_per_ft * c.load_lb_ft2 / c.rho_p_lb_ft3)
-            .sum()
-    };
-    let a_dead = area(&dead);
-    let a_live = area(&live);
-    let a_t = a_dead + a_live;
-    if a_t <= 0.0 {
-        return Err(RothermelError::NoFuel {
-            classes: bed.classes.len(),
-        });
-    }
-
-    let mut cats: Vec<(&[&Class], CategoryValues, f64)> = Vec::with_capacity(2);
-    if a_dead > 0.0 {
-        cats.push((&dead, category_values(&dead, a_dead, a_t), mx1));
-    }
-    let live_mx_value = if a_live > 0.0 {
-        let mx2 = live_mx(&dead, &live, mx1);
-        cats.push((&live, category_values(&live, a_live, a_t), mx2));
-        Some(mx2)
-    } else {
-        None
-    };
-
-    // σ = Σ_i f_i σ_i (eq. 71); ρ_b = (1/δ) ΣΣ (w0)_ij (eq. 74);
-    // β = (1/δ) ΣΣ (w0)_ij/(ρ_p)_ij (eq. 73).
-    let sigma: f64 = cats.iter().map(|(_, v, _)| v.f_i * v.sigma).sum();
-    let rho_b = bed.classes.iter().map(|c| c.load_lb_ft2).sum::<f64>() / depth;
-    let beta = bed
-        .classes
-        .iter()
-        .map(|c| c.load_lb_ft2 / c.rho_p_lb_ft3)
-        .sum::<f64>()
-        / depth;
-    let beta_op = beta_op(sigma);
-    let ratio = beta / beta_op;
-
-    // I_R = Γ' Σ_i (w_n)_i h_i (η_M)_i (η_s)_i (Table 6c, Albini p. 17 replacing eq. 58).
-    let gamma = gamma_prime(gamma_max(sigma), ratio, a_albini(sigma));
-    let ir = gamma
-        * cats
-            .iter()
-            .map(|(_, v, mx)| v.wn * v.h * eta_m(v.mf, *mx) * v.eta_s)
-            .sum::<f64>();
-    let xi = xi(sigma, beta);
-
-    // Heat sink ρ_b ε Q_ig = ρ_b Σ_i f_i Σ_j f_ij exp(−138/σ_ij) (Q_ig)_ij (eq. 77).
-    let heat_sink = rho_b
-        * cats
-            .iter()
-            .map(|(cs, v, _)| {
-                v.f_i
-                    * cs.iter()
-                        .zip(&v.f_ij)
-                        .map(|(c, f)| f * epsilon(c.sav_per_ft) * q_ig(c.moisture))
-                        .sum::<f64>()
-            })
-            .sum::<f64>();
-    if !heat_sink.is_finite() || heat_sink <= 0.0 {
-        return Err(RothermelError::ZeroHeatSink {
-            heat_sink_btu_ft3: heat_sink,
-        });
-    }
-    // R_0 = I_R ξ / (ρ_b ε Q_ig) (eq. 75).
-    let r0 = ir * xi / heat_sink;
-
+    let terms = BedTerms::new(bed)?;
+    let m = terms.eval(|index| bed.classes[index].moisture)?;
     Ok(Base {
         wind,
-        r0,
-        ir,
-        xi,
-        heat_sink,
-        sigma,
-        beta,
-        beta_op,
-        ratio,
-        phi_s: phi_s(beta, slope_tan),
-        c: wind_c(sigma),
-        b: wind_b(sigma),
-        e: wind_e(sigma),
-        u_max: wind_limit_ft_min(ir),
-        live_mx: live_mx_value,
-        tr: residence_time_min(sigma),
+        r0: m.r0,
+        ir: m.ir,
+        xi: terms.xi,
+        heat_sink: m.heat_sink,
+        sigma: terms.sigma,
+        beta: terms.beta,
+        beta_op: terms.beta_op,
+        ratio: terms.ratio,
+        phi_s: phi_s(terms.beta, slope_tan),
+        c: terms.c,
+        b: terms.b,
+        e: terms.e,
+        u_max: wind_limit_ft_min(m.ir),
+        live_mx: m.live_mx,
+        tr: terms.tr,
     })
+}
+
+/// One category's moisture-independent terms of the final model.
+#[derive(Debug, Clone, PartialEq)]
+struct CategoryTerms {
+    /// Bed index of each class of the category, in bed order.
+    classes: Vec<usize>,
+    /// f_i = A_i/A_T (eq. 57).
+    f_i: f64,
+    /// f_ij (eq. 56), in class order.
+    f_ij: Vec<f64>,
+    /// f_ij exp(−138/σ_ij), in class order.
+    f_eps: Vec<f64>,
+    /// (w_n)_i h_i.
+    wn_h: f64,
+    /// (η_s)_i.
+    eta_s: f64,
+}
+
+/// The terms of [`BedTerms::eval`] that depend on the class moistures.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct MoistureTerms {
+    r0: f64,
+    ir: f64,
+    heat_sink: f64,
+    live_mx: Option<f64>,
+}
+
+/// The terms of the final model (Table 6a-6c, pp. 17-19) that depend on
+/// neither wind, slope nor class moistures, for a validated bed.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct BedTerms {
+    n_classes: usize,
+    mx1: f64,
+    dead: Option<CategoryTerms>,
+    live: Option<CategoryTerms>,
+    /// Bed index of each dead class, in bed order.
+    dead_classes: Vec<usize>,
+    live_mx: Option<LiveMxTerms>,
+    sigma: f64,
+    beta: f64,
+    beta_op: f64,
+    ratio: f64,
+    /// Γ' (eq. 67).
+    gamma: f64,
+    xi: f64,
+    rho_b: f64,
+    c: f64,
+    b: f64,
+    e: f64,
+    tr: f64,
+}
+
+impl BedTerms {
+    /// Validates the bed (depth, (M_x)_1 and every class, as `spread` does)
+    /// and computes its moisture-independent terms.
+    pub(crate) fn new(bed: &Bed<'_>) -> Result<Self> {
+        let depth = check("depth", bed.depth_ft, true)?;
+        let mx1 = check("dead moisture of extinction", bed.dead_mx, true)?;
+        for (index, c) in bed.classes.iter().enumerate() {
+            validate_class(index, c)?;
+        }
+        let of = |category: Category| -> Vec<usize> {
+            (0..bed.classes.len())
+                .filter(|&i| bed.classes[i].category == category)
+                .collect()
+        };
+        let dead_classes = of(Category::Dead);
+        let live_classes = of(Category::Live);
+        let dead: Vec<&Class> = dead_classes.iter().map(|&i| &bed.classes[i]).collect();
+        let live: Vec<&Class> = live_classes.iter().map(|&i| &bed.classes[i]).collect();
+        // A_ij = σ_ij (w0)_ij / (ρ_p)_ij (eq. 53); A_i = Σ_j A_ij (eq. 54); A_T = Σ_i A_i (eq. 55).
+        let area = |cs: &[&Class]| -> f64 {
+            cs.iter()
+                .map(|c| c.sav_per_ft * c.load_lb_ft2 / c.rho_p_lb_ft3)
+                .sum()
+        };
+        let a_dead = area(&dead);
+        let a_live = area(&live);
+        let a_t = a_dead + a_live;
+        if a_t <= 0.0 {
+            return Err(RothermelError::NoFuel {
+                classes: bed.classes.len(),
+            });
+        }
+        let category = |indices: &[usize], cs: &[&Class], a_i: f64| -> (CategoryTerms, f64) {
+            let v = category_values(cs, a_i, a_t);
+            let f_eps = cs
+                .iter()
+                .zip(&v.f_ij)
+                .map(|(c, f)| f * epsilon(c.sav_per_ft))
+                .collect();
+            let sigma_term = v.f_i * v.sigma;
+            (
+                CategoryTerms {
+                    classes: indices.to_vec(),
+                    f_i: v.f_i,
+                    f_eps,
+                    wn_h: v.wn * v.h,
+                    eta_s: v.eta_s,
+                    f_ij: v.f_ij,
+                },
+                sigma_term,
+            )
+        };
+        let dead_terms = (a_dead > 0.0).then(|| category(&dead_classes, &dead, a_dead));
+        let live_terms = (a_live > 0.0).then(|| category(&live_classes, &live, a_live));
+
+        // σ = Σ_i f_i σ_i (eq. 71); ρ_b = (1/δ) ΣΣ (w0)_ij (eq. 74);
+        // β = (1/δ) ΣΣ (w0)_ij/(ρ_p)_ij (eq. 73).
+        let sigma: f64 = [&dead_terms, &live_terms]
+            .into_iter()
+            .flatten()
+            .map(|(_, s)| s)
+            .sum();
+        let rho_b = bed.classes.iter().map(|c| c.load_lb_ft2).sum::<f64>() / depth;
+        let beta = bed
+            .classes
+            .iter()
+            .map(|c| c.load_lb_ft2 / c.rho_p_lb_ft3)
+            .sum::<f64>()
+            / depth;
+        let beta_op = beta_op(sigma);
+        let ratio = beta / beta_op;
+        Ok(Self {
+            n_classes: bed.classes.len(),
+            mx1,
+            live_mx: if live_terms.is_some() {
+                LiveMxTerms::new(&dead, &live)
+            } else {
+                None
+            },
+            dead: dead_terms.map(|(t, _)| t),
+            live: live_terms.map(|(t, _)| t),
+            dead_classes,
+            sigma,
+            beta,
+            beta_op,
+            ratio,
+            gamma: gamma_prime(gamma_max(sigma), ratio, a_albini(sigma)),
+            xi: xi(sigma, beta),
+            rho_b,
+            c: wind_c(sigma),
+            b: wind_b(sigma),
+            e: wind_e(sigma),
+            tr: residence_time_min(sigma),
+        })
+    }
+
+    /// R_0, I_R, the heat sink and (M_x)_2 with the class at bed index `i` at
+    /// moisture `moisture(i)`.
+    ///
+    /// # Errors
+    /// [`RothermelError::InvalidClass`] when a moisture is negative or not
+    /// finite, and [`RothermelError::ZeroHeatSink`] when the heat sink is not
+    /// positive.
+    fn eval(&self, moisture: impl Fn(usize) -> f64) -> Result<MoistureTerms> {
+        for index in 0..self.n_classes {
+            check_class(index, "moisture", moisture(index), false)?;
+        }
+        let mx2 = self.live.as_ref().map(|_| match &self.live_mx {
+            Some(t) => t.eval(|j| moisture(self.dead_classes[j]), self.mx1),
+            None => self.mx1,
+        });
+        // (M_f)_i = Σ_j f_ij (M_f)_ij (eq. 66).
+        let mf = |t: &CategoryTerms| -> f64 {
+            t.classes
+                .iter()
+                .zip(&t.f_ij)
+                .map(|(&i, f)| f * moisture(i))
+                .sum()
+        };
+        let cats = [
+            self.dead.as_ref().map(|t| (t, self.mx1)),
+            self.live.as_ref().zip(mx2),
+        ];
+        // I_R = Γ' Σ_i (w_n)_i h_i (η_M)_i (η_s)_i (Table 6c, Albini p. 17 replacing eq. 58).
+        let ir = self.gamma
+            * cats
+                .iter()
+                .flatten()
+                .map(|(t, mx)| t.wn_h * eta_m(mf(t), *mx) * t.eta_s)
+                .sum::<f64>();
+        // Heat sink ρ_b ε Q_ig = ρ_b Σ_i f_i Σ_j f_ij exp(−138/σ_ij) (Q_ig)_ij (eq. 77).
+        let heat_sink = self.rho_b
+            * cats
+                .iter()
+                .flatten()
+                .map(|(t, _)| {
+                    t.f_i
+                        * t.classes
+                            .iter()
+                            .zip(&t.f_eps)
+                            .map(|(&i, fe)| fe * q_ig(moisture(i)))
+                            .sum::<f64>()
+                })
+                .sum::<f64>();
+        if !heat_sink.is_finite() || heat_sink <= 0.0 {
+            return Err(RothermelError::ZeroHeatSink {
+                heat_sink_btu_ft3: heat_sink,
+            });
+        }
+        // R_0 = I_R ξ / (ρ_b ε Q_ig) (eq. 75).
+        Ok(MoistureTerms {
+            r0: ir * self.xi / heat_sink,
+            ir,
+            heat_sink,
+            live_mx: mx2,
+        })
+    }
+
+    /// Number of classes of the bed.
+    pub(crate) fn n_classes(&self) -> usize {
+        self.n_classes
+    }
+}
+
+/// The terms of [`DirModel`] that depend on neither the class moistures nor
+/// wind or slope.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DirTerms {
+    bed: BedTerms,
+    limit: WindLimit,
+    inv_b: f64,
+    ratio_neg_e: f64,
+    ratio_e: f64,
+    phi_s_coef: f64,
+}
+
+impl DirTerms {
+    /// Validates the bed and computes its moisture-independent terms.
+    pub(crate) fn new(bed: &Bed<'_>, limit: WindLimit) -> Result<Self> {
+        let bed = BedTerms::new(bed)?;
+        Ok(Self {
+            limit,
+            inv_b: 1.0 / bed.b,
+            ratio_neg_e: bed.ratio.powf(-bed.e),
+            ratio_e: bed.ratio.powf(bed.e),
+            phi_s_coef: 5.275 * bed.beta.powf(-0.3),
+            bed,
+        })
+    }
+
+    /// Number of classes of the bed.
+    pub(crate) fn n_classes(&self) -> usize {
+        self.bed.n_classes()
+    }
+
+    /// The [`DirModel`] of the bed with the class at bed index `i` at
+    /// moisture `moisture(i)`.
+    ///
+    /// # Errors
+    /// The errors of [`BedTerms::eval`].
+    pub(crate) fn at(&self, moisture: impl Fn(usize) -> f64) -> Result<DirModel> {
+        let m = self.bed.eval(moisture)?;
+        let u_max = wind_limit_ft_min(m.ir);
+        Ok(DirModel {
+            limit: self.limit,
+            r0: m.r0,
+            ir: m.ir,
+            c: self.bed.c,
+            b: self.bed.b,
+            inv_b: self.inv_b,
+            ratio_neg_e: self.ratio_neg_e,
+            ratio_e: self.ratio_e,
+            phi_s_coef: self.phi_s_coef,
+            u_max,
+            phi_w_at_u_max: self.bed.c * u_max.powf(self.bed.b) * self.ratio_neg_e,
+            ir_tr: m.ir * self.bed.tr,
+        })
+    }
 }
 
 /// Basic single-class model of §3.1 (pp. 12-15) with the Rothermel (1972)

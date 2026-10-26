@@ -23,6 +23,9 @@ pub enum RothermelError {
     /// The heat sink is not positive, so the spread rate is undefined.
     #[error("heat sink is {heat_sink_btu_ft3} Btu/ft3; spread rate undefined")]
     ZeroHeatSink { heat_sink_btu_ft3: f64 },
+    /// Building the fuel classes of a fuel model failed.
+    #[error(transparent)]
+    Fuel(#[from] firespread_fuel::FuelError),
 }
 
 pub type Result<T> = core::result::Result<T, RothermelError>;

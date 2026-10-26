@@ -53,6 +53,63 @@ pub enum EnsembleError {
         index: usize,
         value: f32,
     },
+    /// A canopy or weather value at a cell is out of range.
+    #[error("{layer} cell {index} holds {value}, expected {bound}")]
+    InvalidCell {
+        layer: &'static str,
+        bound: &'static str,
+        index: usize,
+        value: f64,
+    },
+    /// A canopy or fuel input of the wind adjustment factor is out of range.
+    #[error("wind adjustment input {field} is {value}, expected {bound}")]
+    InvalidCanopy {
+        field: &'static str,
+        bound: &'static str,
+        value: f64,
+    },
+    /// A weather input of the dead fuel moisture model is out of range.
+    #[error("dead fuel moisture input {field} is {value}, expected {bound}")]
+    InvalidWeather {
+        field: &'static str,
+        bound: &'static str,
+        value: f64,
+    },
+    /// The sky-cover edges are not finite and strictly increasing.
+    #[error("sky cover edges {edges:?} are not finite and strictly increasing")]
+    InvalidSkyEdges { edges: [f64; 3] },
+    /// A spread multiplier is negative or not finite.
+    #[error("spread multiplier of {model} is {value}, expected a finite value >= 0")]
+    InvalidSpreadMultiplier { model: &'static str, value: f64 },
+    /// The weather index could not be read or parsed.
+    #[error("weather index {path}: {reason}")]
+    WeatherIndex {
+        path: std::path::PathBuf,
+        reason: String,
+    },
+    /// The weather index names a unit other than the one the loader reads.
+    #[error("weather index unit of {field} is {found:?}, expected {expected:?}")]
+    WeatherUnit {
+        field: &'static str,
+        found: Option<String>,
+        expected: &'static str,
+    },
+    /// The weather index has no window of this name.
+    #[error("weather index has no window {window:?}")]
+    MissingWindow { window: String },
+    /// The weather index lacks a file of a window or hour.
+    #[error("weather window {window:?} lacks {layer} for {at}")]
+    MissingWeatherFile {
+        window: String,
+        layer: &'static str,
+        at: String,
+    },
+    /// A window holds fewer hours of weather than a run needs.
+    #[error("weather holds {available} hours, fewer than the {horizon_h} h asked for")]
+    TooFewHours { available: usize, horizon_h: u32 },
+    /// A weather raster's geometry differs from the fuel grid's.
+    #[error("weather raster {path} is not on the FBFM40 grid")]
+    WeatherGrid { path: std::path::PathBuf },
     /// A thread panicked while holding the member buffer pool.
     #[error("member buffer pool poisoned by a panicked thread")]
     BufferPoolPoisoned,

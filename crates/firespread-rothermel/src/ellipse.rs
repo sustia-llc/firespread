@@ -4,7 +4,7 @@
 
 /// Length-to-breadth ratio LB = 0.936 e^(0.2566 U_E) + 0.461 e^(−0.1548 U_E)
 /// − 0.397 with U_E the effective midflame wind speed in m/s, truncated at 8
-/// (RMRS-RP-4 p. 7 eq. [13]). Also floored at 1, which the formula equals at
+/// (RMRS-RP-4 p. 7 eq. \[13\]). Also floored at 1, which the formula equals at
 /// U_E = 0, so that rounding cannot give LB < 1.
 #[must_use]
 pub fn length_to_breadth(u_e_m_s: f64) -> f64 {
@@ -32,7 +32,7 @@ pub(crate) fn eccentricity(lb: f64) -> f64 {
 
 /// Rate of spread r(ψ) = R (1 − e) / (1 − e cos ψ) along a ray from the rear
 /// focus at angle `psi_rad` from the head direction, for head rate R and
-/// eccentricity e in [0, 1); derived from RMRS-RP-4 p. 7 eqs. [15]-[17] as
+/// eccentricity e in [0, 1); derived from RMRS-RP-4 p. 7 eqs. \[15\]-\[17\] as
 /// the focal polar equation of the ellipse with semi-major axis b and focal
 /// distance c. Gives R at ψ = 0 and the backing rate R/HB at ψ = π.
 #[must_use]

@@ -1,5 +1,5 @@
-//! Unit factors between the fire-behaviour papers' US customary units and SI.
-//! Every conversion in the workspace derives from the five base factors here.
+//! Unit factors and conversions between the fire-behaviour papers' US
+//! customary units and SI.
 
 /// Kilograms per short ton.
 pub const KG_PER_SHORT_TON: f64 = 907.184_74;
@@ -135,6 +135,23 @@ pub fn min_to_s(min: f64) -> f64 {
     min * S_PER_MIN
 }
 
+/// Rankine degrees at 0 °F: absolute zero is −459.67 °F.
+pub const RANKINE_AT_ZERO_F: f64 = 459.67;
+/// Fahrenheit degrees per kelvin.
+pub const F_PER_K: f64 = 1.8;
+
+/// Kelvin to degrees Fahrenheit, `K · 1.8 − 459.67`, for any finite input.
+#[must_use]
+pub fn k_to_f(k: f64) -> f64 {
+    k * F_PER_K - RANKINE_AT_ZERO_F
+}
+
+/// Degrees Fahrenheit to kelvin, `(°F + 459.67) / 1.8`, for any finite input.
+#[must_use]
+pub fn f_to_k(f: f64) -> f64 {
+    (f + RANKINE_AT_ZERO_F) / F_PER_K
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,6 +197,19 @@ mod tests {
             assert!(rel(kg_m2_to_lb_ft2(lb_ft2_to_kg_m2(x)), x) < 1e-12);
             assert!(rel(kg_m3_to_lb_ft3(lb_ft3_to_kg_m3(x)), x) < 1e-12);
             assert!(rel(m_s_to_ft_min(ft_min_to_m_s(x)), x) < 1e-12);
+            assert!(rel(k_to_f(f_to_k(x)), x) < 1e-12);
+        }
+    }
+
+    #[test]
+    fn kelvin_fahrenheit_fixed_points() {
+        // Water freezes at 273.15 K = 32 °F and boils at 373.15 K = 212 °F;
+        // 0 K = −459.67 °F.
+        for (k, f) in [(273.15, 32.0), (373.15, 212.0), (0.0, -459.67)] {
+            let got = k_to_f(k);
+            assert!((got - f).abs() < 1e-9, "{k} K = {got} °F, expected {f}");
+            let back = f_to_k(f);
+            assert!((back - k).abs() < 1e-9, "{f} °F = {back} K, expected {k}");
         }
     }
 }
