@@ -9,8 +9,9 @@ use firespread_grid::{
     GridHeader, Manifest, MaskGrid, read_geotiff, read_geotiff_u8, write_cog_u8,
 };
 use firespread_metrics::{
-    Mask, MetricsError, ProbabilityGrid, brier, dice, fit_uniform_growth_radius, jaccard,
-    persistence, precision, recall, uniform_growth,
+    Mask, MetricsError, ProbabilityGrid, boundary_mean_m, brier, buffered_dice, buffered_precision,
+    buffered_recall, dice, fit_uniform_growth_radius, hausdorff_m, jaccard, persistence, precision,
+    recall, uniform_growth,
 };
 use serde::Serialize;
 
@@ -26,6 +27,8 @@ pub const FIT_LAG_H: i64 = 12;
 pub const FIT_TOLERANCE_M: f64 = 1.0;
 /// Default radius of the Brier domain around the start perimeter, m.
 pub const DEFAULT_BRIER_RADIUS_M: f64 = 5000.0;
+/// Default tolerance of the buffered scores, m: the VIIRS observation resolution.
+pub const DEFAULT_BUFFER_M: f64 = 375.0;
 
 /// Confusion code of a cell in neither the forecast nor the target mask.
 pub const CONFUSION_NONE: u8 = 0;
@@ -69,6 +72,8 @@ pub struct ScoreOptions {
     pub uniform_rate_m_per_h: Option<f64>,
     /// Radius of the Brier domain around the start perimeter, m.
     pub brier_radius_m: f64,
+    /// Tolerance of the buffered precision, recall and Dice, m.
+    pub buffer_m: f64,
 }
 
 fn mask_of(h: &GridHeader, data: &[u8]) -> Result<Mask> {
@@ -167,6 +172,11 @@ pub struct Row {
     pub precision: Option<f64>,
     pub recall: Option<f64>,
     pub brier: Option<f64>,
+    pub boundary_mean_m: Option<f64>,
+    pub hausdorff_m: Option<f64>,
+    pub buffered_precision: Option<f64>,
+    pub buffered_recall: Option<f64>,
+    pub buffered_dice: Option<f64>,
 }
 
 /// How the uniform-growth rate was set.
@@ -198,6 +208,8 @@ pub struct Scorecard {
     pub forecast_threshold: f32,
     pub uniform_growth: UniformGrowth,
     pub brier_domain: BrierDomain,
+    /// Tolerance of the buffered scores, m.
+    pub buffer_m: f64,
     pub rows: Vec<Row>,
 }
 
@@ -298,7 +310,10 @@ fn probability_of(mask: &Mask) -> Result<ProbabilityGrid> {
 /// rate fitted by [`fit_uniform_growth_radius`] from P(t0 − 12 h) to the
 /// size of P(t0), divided by 12 h. The baselines' Brier takes p ∈ {0, 1}.
 /// The Brier domain is the burnable cells within `opts.brier_radius_m` of
-/// the start mask. Each entrant also gets a `wfigs_final` row with only
+/// the start mask. Each `feds` row also carries [`boundary_mean_m`],
+/// [`hausdorff_m`], and [`buffered_precision`], [`buffered_recall`] and
+/// [`buffered_dice`] at `opts.buffer_m`; each is `null` when either mask is
+/// empty. Each entrant also gets a `wfigs_final` row with only
 /// `precision`: its forecast cells inside the WFIGS final perimeter over its
 /// forecast cells. `confusion_h<N>.tif` is a `u8` GeoTIFF on the run's grid
 /// with GDAL_NODATA [`CONFUSION_NODATA`], holding [`confusion_codes`] of the
@@ -408,6 +423,11 @@ pub fn score_run(run_dir: &Path, obs: &Observations, opts: &ScoreOptions) -> Res
             precision: optional(precision(mask, &obs.target))?,
             recall: optional(recall(mask, &obs.target))?,
             brier: Some(brier(p, &obs.target, &domain)?),
+            boundary_mean_m: optional(boundary_mean_m(mask, &obs.target, dx))?,
+            hausdorff_m: optional(hausdorff_m(mask, &obs.target, dx))?,
+            buffered_precision: optional(buffered_precision(mask, &obs.target, dx, opts.buffer_m))?,
+            buffered_recall: optional(buffered_recall(mask, &obs.target, dx, opts.buffer_m))?,
+            buffered_dice: optional(buffered_dice(mask, &obs.target, dx, opts.buffer_m))?,
         });
     }
     for (entrant, mask, _) in &entrants {
@@ -420,6 +440,11 @@ pub fn score_run(run_dir: &Path, obs: &Observations, opts: &ScoreOptions) -> Res
             precision: optional(precision(mask, &obs.wfigs))?,
             recall: None,
             brier: None,
+            boundary_mean_m: None,
+            hausdorff_m: None,
+            buffered_precision: None,
+            buffered_recall: None,
+            buffered_dice: None,
         });
     }
     let scorecard = Scorecard {
@@ -436,6 +461,7 @@ pub fn score_run(run_dir: &Path, obs: &Observations, opts: &ScoreOptions) -> Res
             radius_m: opts.brier_radius_m,
             cells: domain.count(),
         },
+        buffer_m: opts.buffer_m,
         rows,
     };
 
@@ -527,6 +553,11 @@ pub fn score(run_dir: &Path, data: &Path, opts: &ScoreOptions) -> Result<ScoreOu
         opts.brier_radius_m.is_finite() && opts.brier_radius_m >= 0.0,
         "--brier-radius-m {} is not a finite value >= 0",
         opts.brier_radius_m
+    );
+    ensure!(
+        opts.buffer_m.is_finite() && opts.buffer_m >= 0.0,
+        "--buffer-m {} is not a finite value >= 0",
+        opts.buffer_m
     );
     let manifest = Manifest::read(run_dir.join("manifest.json"))?;
     let window = crate::settings::load_window(data, &manifest.window.name)?;

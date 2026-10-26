@@ -23,11 +23,14 @@
   var CONFUSION_FADED = { precision: [2], recall: [3] };
   var CONFUSION_FADED_ALPHA = 0.15;
   var PMTILES_OPACITY = 0.45;
+  // Scorecard metrics in meters.
+  var METER_METRICS = ["boundary_mean_m", "hausdorff_m"];
   var ENTRANTS = ["firespread", "persistence", "uniform_growth"];
   var SVG_NS = "http://www.w3.org/2000/svg";
 
   // Popup text per `data-help` key. `{brier_radius}` is the Brier domain
-  // radius of the run's scorecard; `{horizon}` is its scored horizon.
+  // radius of the run's scorecard, `{buffer}` its buffer distance, and
+  // `{horizon}` its scored horizon.
   var HELP = {
     // Entrants
     firespread: "Our forecast. A cell counts as burned when at least half of the ensemble runs burn it by that hour.",
@@ -39,6 +42,11 @@
     precision: "The share of the forecast burned area that really burned. A low value means the forecast burns too much.",
     recall: "The share of the observed burned area that the forecast caught. A low value means the forecast burns too little.",
     brier: "The mean squared error of the burn probability, over burnable cells within {brier_radius} of the start perimeter. 0 is perfect, and the baselines use only 0 or 1.",
+    boundary_mean_m: "The mean distance between the forecast and observed fire edges, in meters. 0 is a perfect match.",
+    hausdorff_m: "The largest distance between the forecast and observed fire edges, in meters. It shows the worst miss along the edge. 0 is a perfect match.",
+    buffered_precision: "Like precision, but with a tolerance. If a forecast cell lies within {buffer} of the observed burned area, it counts as right.",
+    buffered_recall: "Like recall, but with a tolerance. If an observed cell lies within {buffer} of the forecast burned area, it counts as caught.",
+    buffered_dice: "Combines buffered precision and buffered recall into one number. 1 is a perfect match.",
     containment: "The share of each forecast's burned cells inside the official final fire perimeter (WFIGS). A low value means the forecast burns land that never burned.",
     // Map and charts
     ramp: "The color shows the share of ensemble runs that burn a cell by the selected hour. Cells that no run burns have no color.",
@@ -53,13 +61,17 @@
 
   var statusEl = document.getElementById("status");
   var brierRadius = "the scoring radius";
+  var bufferDistance = "the buffer distance";
   var confusionHorizon = "N";
 
   function helpText(key) {
     var t = HELP[key];
     return t === undefined
       ? null
-      : t.replace("{brier_radius}", brierRadius).replace("{horizon}", confusionHorizon);
+      : t
+          .replace("{brier_radius}", brierRadius)
+          .replace("{buffer}", bufferDistance)
+          .replace("{horizon}", confusionHorizon);
   }
 
   // Shows the text of the nearest `[data-help]` ancestor on hover, keyboard
@@ -484,23 +496,31 @@
     container.innerHTML = "";
     var W = 340;
     var H = 210;
-    var m = { l: 34, r: 6, t: 26, b: 28 };
+    var meters = METER_METRICS.indexOf(metric) >= 0;
+    var m = { l: meters ? 48 : 34, r: 6, t: 26, b: 28 };
     var svg = el("svg", { class: "chart", viewBox: "0 0 " + W + " " + H, role: "img" }, container);
     var horizons = [];
+    var shown = [];
     card.rows.filter(isFeds).forEach(function (r) {
       if (horizons.indexOf(r.horizon_h) < 0) horizons.push(r.horizon_h);
+      if (typeof r[metric] === "number") shown.push(r[metric]);
     });
     horizons.sort(function (a, b) {
       return a - b;
     });
+    // Meter metrics run from 0 to niceMax of the largest value shown; the
+    // others from 0 to 1.
+    var ymax = meters ? niceMax(Math.max.apply(null, shown)) : 1;
     var iw = W - m.l - m.r;
     var ih = H - m.t - m.b;
     var y = function (v) {
-      return m.t + ih * (1 - v);
+      return m.t + ih * (1 - v / ymax);
     };
-    [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (f) {
+      var v = f * ymax;
+      var label = meters ? Math.round(v) + " m" : String(v);
       el("line", { class: "grid", x1: m.l, x2: W - m.r, y1: y(v), y2: y(v) }, svg);
-      text(svg, m.l - 4, y(v) + 4, String(v), { class: "tick-label", "text-anchor": "end" });
+      text(svg, m.l - 4, y(v) + 4, label, { class: "tick-label", "text-anchor": "end" });
     });
     var gw = iw / Math.max(1, horizons.length);
     var bw = (gw * 0.8) / ENTRANTS.length;
@@ -520,7 +540,7 @@
           });
           return;
         }
-        var vv = Math.min(1, Math.max(0, v));
+        var vv = Math.min(ymax, Math.max(0, v));
         var bar = el(
           "rect",
           { class: "s-" + e, x: x, y: y(vv), width: Math.max(1, bw - 1), height: y(0) - y(vv) },
@@ -654,6 +674,7 @@
     } else {
       var radius = card.brier_domain && card.brier_domain.radius_m;
       if (radius > 0) brierRadius = radius / 1000 + " km";
+      if (typeof card.buffer_m === "number") bufferDistance = card.buffer_m + " m";
       var redraw = function () {
         metricEl.setAttribute("data-help", metricEl.value);
         drawScorecard(scEl, card, metricEl.value);

@@ -114,6 +114,11 @@ The forecast makes a map for each forecast hour. FEDS gives a perimeter every
 | Precision | Share of the forecast area that really burned. | 1 |
 | Recall | Share of the observed area that the forecast caught. | 1 |
 | Brier | Mean squared error of the burn probability, over burnable cells within 5 km of the start perimeter. The option `--brier-radius-m` changes the radius. The baselines use probability 0 or 1. | 0 |
+| Mean boundary distance | For each edge cell of both areas, take the distance in meters to the nearest edge cell of the other area. This is the mean of those distances. An edge cell has a 4-neighbor outside its area or lies on the grid edge. | 0 |
+| Hausdorff distance | Largest of those edge distances, in meters. | 0 |
+| Buffered precision | Share of forecast cells within 375 m of an observed cell. The option `--buffer-m` changes the distance. | 1 |
+| Buffered recall | Share of observed cells within 375 m of a forecast cell. | 1 |
+| Buffered Dice | 2PR / (P + R) of buffered precision P and buffered recall R. | 1 |
 
 WFIGS is the national service for official wildfire perimeters. For each
 entrant, the scorecard also gives the share of forecast cells inside the WFIGS
@@ -137,6 +142,22 @@ one in w2 and w3.
 
 In w1 the forecast recall is 0.48 and its precision 0.73. In w3 its recall is
 0.93 and its precision 0.71. `docs/demo.md` gives the w1 calibration log.
+
+The tolerant metrics of the same runs, with a 375 m buffer, measured on
+2026-10-26. In w1, firespread has the lowest mean boundary distance and the
+highest buffered Dice of the three entrants.
+
+| Window | Entrant | Mean boundary distance (m) | Hausdorff (m) | Buffered precision | Buffered recall | Buffered Dice |
+|---|---|---|---|---|---|---|
+| w1 | firespread | 2980 | 14075 | 0.865 | 0.502 | 0.635 |
+| w1 | persistence | 4204 | 14796 | 1 | 0.442 | 0.613 |
+| w1 | uniform growth | 3982 | 14264 | 0.930 | 0.474 | 0.628 |
+| w2 | firespread | 1098 | 5546 | 0.873 | 0.891 | 0.882 |
+| w2 | persistence | 923 | 7231 | 1 | 0.854 | 0.921 |
+| w2 | uniform growth | 912 | 7033 | 1 | 0.866 | 0.928 |
+| w3 | firespread | 1404 | 11958 | 0.755 | 0.953 | 0.843 |
+| w3 | persistence | 526 | 5866 | 1 | 0.919 | 0.958 |
+| w3 | uniform growth | 780 | 5198 | 0.961 | 0.948 | 0.955 |
 
 ## Repository layout
 

@@ -376,6 +376,147 @@ pub fn fit_uniform_growth_radius(
     Ok(hi)
 }
 
+/// Checks the shared preconditions of the distance metrics: one shape, `dx_m`
+/// finite and positive, and neither mask empty.
+fn check_distance_inputs(
+    simulated: &Mask,
+    observed: &Mask,
+    dx_m: f64,
+    metric: &'static str,
+) -> Result<()> {
+    check_shape(simulated.rows, simulated.cols, observed.rows, observed.cols)?;
+    check_param("dx_m", dx_m, true)?;
+    if simulated.count() == 0 || observed.count() == 0 {
+        return Err(MetricsError::EmptyPerimeters { metric });
+    }
+    Ok(())
+}
+
+/// The boundary of `mask`: its cells that have a 4-neighbour outside the mask
+/// or lie on the grid edge, row-major.
+fn boundary(mask: &Mask) -> Vec<bool> {
+    let (rows, cols) = (mask.rows, mask.cols);
+    let inside = |r: usize, c: usize| mask.cells[r * cols + c];
+    let mut out = vec![false; mask.cells.len()];
+    for r in 0..rows {
+        for c in 0..cols {
+            if !inside(r, c) {
+                continue;
+            }
+            out[r * cols + c] = r == 0
+                || c == 0
+                || r + 1 == rows
+                || c + 1 == cols
+                || !inside(r - 1, c)
+                || !inside(r + 1, c)
+                || !inside(r, c - 1)
+                || !inside(r, c + 1);
+        }
+    }
+    out
+}
+
+/// Distance, metres, from each `true` cell of `from` to the nearest `true` cell
+/// of `to`, in row-major order of `from`; `to` holds at least one `true` cell.
+fn distances_to(rows: usize, cols: usize, from: &[bool], to: &[bool], dx_m: f64) -> Vec<f64> {
+    let squared = distance::squared_edt(rows, cols, to);
+    from.iter()
+        .zip(&squared)
+        .filter(|(f, _)| **f)
+        .map(|(_, &d2)| d2.sqrt() * dx_m)
+        .collect()
+}
+
+/// Boundary distances, metres, of two same-shape non-empty masks: from each
+/// cell of ∂A to the nearest cell of ∂B, then from each cell of ∂B to the
+/// nearest cell of ∂A.
+fn boundary_distances(a: &Mask, b: &Mask, dx_m: f64) -> (Vec<f64>, Vec<f64>) {
+    let (da, db) = (boundary(a), boundary(b));
+    (
+        distances_to(a.rows, a.cols, &da, &db, dx_m),
+        distances_to(a.rows, a.cols, &db, &da, dx_m),
+    )
+}
+
+/// Mean boundary distance, metres, of a simulated mask A and an observed mask B
+/// of one shape on square cells of side `dx_m`: (Σ_{a∈∂A} d(a, ∂B) +
+/// Σ_{b∈∂B} d(b, ∂A)) / (|∂A| + |∂B|), where the boundary ∂M of a mask is its
+/// cells that have a 4-neighbour outside the mask or lie on the grid edge, and
+/// d is the Euclidean distance between cell centres to the nearest cell of the
+/// set. Distances come from the exact squared Euclidean distance transform of
+/// [`uniform_growth`]. `dx_m` is finite and positive; fails with
+/// [`MetricsError::EmptyPerimeters`] when either mask is empty.
+pub fn boundary_mean_m(simulated: &Mask, observed: &Mask, dx_m: f64) -> Result<f64> {
+    check_distance_inputs(simulated, observed, dx_m, "boundary_mean_m")?;
+    let (ab, ba) = boundary_distances(simulated, observed, dx_m);
+    let sum: f64 = ab.iter().chain(&ba).sum();
+    Ok(sum / (ab.len() + ba.len()) as f64)
+}
+
+/// Hausdorff distance, metres, of a simulated mask A and an observed mask B of
+/// one shape on square cells of side `dx_m`: max(max_{a∈∂A} d(a, ∂B),
+/// max_{b∈∂B} d(b, ∂A)), with ∂ and d as in [`boundary_mean_m`]. `dx_m` is
+/// finite and positive; fails with [`MetricsError::EmptyPerimeters`] when
+/// either mask is empty.
+pub fn hausdorff_m(simulated: &Mask, observed: &Mask, dx_m: f64) -> Result<f64> {
+    check_distance_inputs(simulated, observed, dx_m, "hausdorff_m")?;
+    let (ab, ba) = boundary_distances(simulated, observed, dx_m);
+    Ok(ab.iter().chain(&ba).copied().fold(0.0, f64::max))
+}
+
+/// Share of the `true` cells of `from` whose Euclidean cell-centre distance,
+/// metres, to the nearest `true` cell of `to` is at most `buffer_m`.
+fn buffered_share(from: &Mask, to: &Mask, dx_m: f64, buffer_m: f64) -> f64 {
+    let d = distances_to(from.rows, from.cols, &from.cells, &to.cells, dx_m);
+    let within = d.iter().filter(|&&m| m <= buffer_m).count();
+    within as f64 / d.len() as f64
+}
+
+/// Buffered precision of a simulated and an observed mask of one shape on
+/// square cells of side `dx_m`: the share of simulated cells whose Euclidean
+/// cell-centre distance to the nearest observed cell is at most `buffer_m`,
+/// with distances as in [`boundary_mean_m`]. `dx_m` is finite and positive and
+/// `buffer_m` finite and non-negative; fails with
+/// [`MetricsError::EmptyPerimeters`] when either mask is empty.
+pub fn buffered_precision(
+    simulated: &Mask,
+    observed: &Mask,
+    dx_m: f64,
+    buffer_m: f64,
+) -> Result<f64> {
+    check_distance_inputs(simulated, observed, dx_m, "buffered_precision")?;
+    check_param("buffer_m", buffer_m, false)?;
+    Ok(buffered_share(simulated, observed, dx_m, buffer_m))
+}
+
+/// Buffered recall of a simulated and an observed mask of one shape on square
+/// cells of side `dx_m`: the share of observed cells whose Euclidean
+/// cell-centre distance to the nearest simulated cell is at most `buffer_m`,
+/// with distances as in [`boundary_mean_m`]. `dx_m` is finite and positive and
+/// `buffer_m` finite and non-negative; fails with
+/// [`MetricsError::EmptyPerimeters`] when either mask is empty.
+pub fn buffered_recall(simulated: &Mask, observed: &Mask, dx_m: f64, buffer_m: f64) -> Result<f64> {
+    check_distance_inputs(simulated, observed, dx_m, "buffered_recall")?;
+    check_param("buffer_m", buffer_m, false)?;
+    Ok(buffered_share(observed, simulated, dx_m, buffer_m))
+}
+
+/// Buffered Dice 2PR / (P + R) of the [`buffered_precision`] P and the
+/// [`buffered_recall`] R of a simulated and an observed mask of one shape, and
+/// 0 when P + R is 0. `dx_m` is finite and positive and `buffer_m` finite and
+/// non-negative; fails with [`MetricsError::EmptyPerimeters`] when either mask
+/// is empty.
+pub fn buffered_dice(simulated: &Mask, observed: &Mask, dx_m: f64, buffer_m: f64) -> Result<f64> {
+    check_distance_inputs(simulated, observed, dx_m, "buffered_dice")?;
+    check_param("buffer_m", buffer_m, false)?;
+    let p = buffered_share(simulated, observed, dx_m, buffer_m);
+    let r = buffered_share(observed, simulated, dx_m, buffer_m);
+    if p + r == 0.0 {
+        return Ok(0.0);
+    }
+    Ok(2.0 * p * r / (p + r))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,6 +817,164 @@ mod tests {
             ),
             "zero tolerance: got {got:?}"
         );
+    }
+
+    const DX: f64 = 30.0;
+    const EPS_M: f64 = 1e-12;
+
+    fn close_m(name: &str, got: f64, want: f64) {
+        assert!(
+            (got - want).abs() <= EPS_M,
+            "{name}: got {got}, expected {want}, diff {}",
+            got - want
+        );
+    }
+
+    /// A `rows` by `cols` mask holding the cells `(r, c)` of `cells`.
+    fn cells_mask(rows: usize, cols: usize, cells: &[(usize, usize)]) -> Mask {
+        let mut bits = vec![0_u8; rows * cols];
+        for &(r, c) in cells {
+            bits[r * cols + c] = 1;
+        }
+        mask(rows, cols, &bits)
+    }
+
+    /// The square of side `side` centred at `(centre, centre)`.
+    fn square(rows: usize, centre: usize, side: usize) -> Mask {
+        let h = side / 2;
+        let cells: Vec<(usize, usize)> = (centre - h..=centre + h)
+            .flat_map(|r| (centre - h..=centre + h).map(move |c| (r, c)))
+            .collect();
+        cells_mask(rows, rows, &cells)
+    }
+
+    #[test]
+    fn boundary_of_a_full_grid_is_its_edge() {
+        let full = mask(4, 4, &[1; 16]);
+        let b = boundary(&full);
+        for r in 0..4 {
+            for c in 0..4 {
+                let want = r == 0 || c == 0 || r == 3 || c == 3;
+                assert_eq!(b[r * 4 + c], want, "cell ({r},{c}) on the boundary");
+            }
+        }
+        assert_eq!(b.iter().filter(|&&x| x).count(), 12, "boundary cell count");
+    }
+
+    #[test]
+    fn hand_fixture_equal_masks() {
+        let a = square(7, 3, 3);
+        close_m("boundary mean", boundary_mean_m(&a, &a, DX).unwrap(), 0.0);
+        close_m("hausdorff", hausdorff_m(&a, &a, DX).unwrap(), 0.0);
+        for (name, f) in [
+            (
+                "buffered precision",
+                buffered_precision as fn(&Mask, &Mask, f64, f64) -> Result<f64>,
+            ),
+            ("buffered recall", buffered_recall),
+            ("buffered dice", buffered_dice),
+        ] {
+            close_m(name, f(&a, &a, DX, 0.0).unwrap(), 1.0);
+        }
+    }
+
+    #[test]
+    fn hand_fixture_two_cells_four_apart() {
+        let s = cells_mask(3, 9, &[(1, 2)]);
+        let o = cells_mask(3, 9, &[(1, 6)]);
+        close_m("boundary mean", boundary_mean_m(&s, &o, DX).unwrap(), 120.0);
+        close_m("hausdorff", hausdorff_m(&s, &o, DX).unwrap(), 120.0);
+        for (buffer, want) in [(120.0, 1.0), (119.0, 0.0)] {
+            close_m(
+                &format!("buffered precision at {buffer} m"),
+                buffered_precision(&s, &o, DX, buffer).unwrap(),
+                want,
+            );
+            close_m(
+                &format!("buffered recall at {buffer} m"),
+                buffered_recall(&s, &o, DX, buffer).unwrap(),
+                want,
+            );
+            close_m(
+                &format!("buffered dice at {buffer} m"),
+                buffered_dice(&s, &o, DX, buffer).unwrap(),
+                want,
+            );
+        }
+    }
+
+    #[test]
+    fn hand_fixture_nested_squares() {
+        let s = square(7, 3, 3);
+        let o = square(7, 3, 5);
+        let root2 = 2_f64.sqrt();
+        let want_mean = (8.0 * 30.0 + 12.0 * 30.0 + 4.0 * 30.0 * root2) / 24.0;
+        close_m(
+            "boundary mean",
+            boundary_mean_m(&s, &o, DX).unwrap(),
+            want_mean,
+        );
+        close_m("hausdorff", hausdorff_m(&s, &o, DX).unwrap(), 30.0 * root2);
+        close_m(
+            "buffered precision at 0 m",
+            buffered_precision(&s, &o, DX, 0.0).unwrap(),
+            1.0,
+        );
+        close_m(
+            "buffered recall at 0 m",
+            buffered_recall(&s, &o, DX, 0.0).unwrap(),
+            9.0 / 25.0,
+        );
+        close_m(
+            "buffered recall at 30√2 m",
+            buffered_recall(&s, &o, DX, 30.0 * root2).unwrap(),
+            1.0,
+        );
+        close_m(
+            "buffered dice at 0 m",
+            buffered_dice(&s, &o, DX, 0.0).unwrap(),
+            2.0 * (9.0 / 25.0) / (1.0 + 9.0 / 25.0),
+        );
+    }
+
+    #[test]
+    fn hand_fixture_grid_with_a_hole() {
+        // Observed: the full 7 x 7 grid, boundary its 24 edge cells. Simulated:
+        // the grid minus the centre (3, 3), boundary the 24 edge cells and the 4
+        // 4-neighbours of the centre, each 2 cells from the grid edge; the
+        // diagonal neighbours of the centre are off it.
+        let o = mask(7, 7, &[1; 49]);
+        let mut bits = [1_u8; 49];
+        bits[3 * 7 + 3] = 0;
+        let s = mask(7, 7, &bits);
+        close_m(
+            "boundary mean",
+            boundary_mean_m(&s, &o, DX).unwrap(),
+            4.0 * 60.0 / 52.0,
+        );
+        close_m("hausdorff", hausdorff_m(&s, &o, DX).unwrap(), 60.0);
+    }
+
+    #[test]
+    fn distance_metrics_reject_empty_masks() {
+        let e = mask(2, 2, &[0, 0, 0, 0]);
+        let f = mask(2, 2, &[1, 0, 0, 0]);
+        for (s, o) in [(&e, &f), (&f, &e), (&e, &e)] {
+            for (name, got) in [
+                ("boundary_mean_m", boundary_mean_m(s, o, DX)),
+                ("hausdorff_m", hausdorff_m(s, o, DX)),
+                ("buffered_precision", buffered_precision(s, o, DX, 375.0)),
+                ("buffered_recall", buffered_recall(s, o, DX, 375.0)),
+                ("buffered_dice", buffered_dice(s, o, DX, 375.0)),
+            ] {
+                assert!(
+                    matches!(got, Err(MetricsError::EmptyPerimeters { metric }) if metric == name),
+                    "{name} of {:?} against {:?}: got {got:?}",
+                    s.cells(),
+                    o.cells()
+                );
+            }
+        }
     }
 
     #[test]

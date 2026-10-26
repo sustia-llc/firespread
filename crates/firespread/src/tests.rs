@@ -21,8 +21,8 @@ use crate::ensemble::{
     write_json,
 };
 use crate::score::{
-    CONFUSION_FALSE_ALARM, CONFUSION_HIT, CONFUSION_MISS, CONFUSION_NONE, Observations,
-    ScoreOptions, confusion_codes, score_run,
+    CONFUSION_FALSE_ALARM, CONFUSION_HIT, CONFUSION_MISS, CONFUSION_NONE, DEFAULT_BUFFER_M,
+    Observations, ScoreOptions, confusion_codes, score_run,
 };
 use crate::settings::{NightMoistureSettings, PerturbationSettings, RunSettings, Scenario};
 use crate::timefmt::parse_hour;
@@ -166,6 +166,7 @@ fn scorecard_matches_hand_values() {
     let opts = ScoreOptions {
         uniform_rate_m_per_h: Some(5.0),
         brier_radius_m: 60.0,
+        buffer_m: 0.0,
     };
     score_run(&dir, &hand_observations(), &opts).unwrap();
     let card: Value =
@@ -177,37 +178,58 @@ fn scorecard_matches_hand_values() {
         rows.iter().all(|r| r["horizon_h"] == 12),
         "a row outside the 12 h horizon: {rows:?}"
     );
+    assert_eq!(card["buffer_m"], 0.0, "buffer_m: {}", card["buffer_m"]);
     // Domain: within 60 m of cell 2 (cells 0-4) and burnable (not 0): {1, 2, 3, 4}.
     assert_eq!(card["brier_domain"]["cells"], 4);
+    // On a 1 x 6 grid every cell lies on the grid edge, so each boundary is
+    // its whole mask. Buffer 0 m: the buffered scores equal the plain ones.
     // firespread: p >= 0.5 gives S = {1, 2, 4}; O = {1, 2, 3}.
     // Brier over {1, 2, 3, 4}: (0.25 + 0 + 0.5625 + 0.5625) / 4 = 0.34375.
+    // Boundary distances S→O 0, 0, 30 and O→S 0, 0, 30: mean 60 / 6 = 10 m.
     for (metric, want) in [
         ("jaccard", 0.5),
         ("dice", 4.0 / 6.0),
         ("precision", 2.0 / 3.0),
         ("recall", 2.0 / 3.0),
         ("brier", 0.343_75),
+        ("boundary_mean_m", 10.0),
+        ("hausdorff_m", 30.0),
+        ("buffered_precision", 2.0 / 3.0),
+        ("buffered_recall", 2.0 / 3.0),
+        ("buffered_dice", 2.0 / 3.0),
     ] {
         assert_metric(&card, "firespread", "feds", metric, Some(want));
     }
     // persistence: S = {2}; Brier p = [0, 1, 0, 0] vs o = [1, 1, 1, 0]: 0.5.
+    // Boundary distances S→O 0 and O→S 30, 0, 30: mean 60 / 4 = 15 m.
     for (metric, want) in [
         ("jaccard", 1.0 / 3.0),
         ("dice", 0.5),
         ("precision", 1.0),
         ("recall", 1.0 / 3.0),
         ("brier", 0.5),
+        ("boundary_mean_m", 15.0),
+        ("hausdorff_m", 30.0),
+        ("buffered_precision", 1.0),
+        ("buffered_recall", 1.0 / 3.0),
+        ("buffered_dice", 0.5),
     ] {
         assert_metric(&card, "persistence", "feds", metric, Some(want));
     }
     // uniform_growth: 5 m/h for 12 h = 60 m, S = {0, 1, 2, 3, 4};
     // Brier p = [1, 1, 1, 1] vs o = [1, 1, 1, 0]: 0.25.
+    // Boundary distances S→O 30, 0, 0, 0, 30 and O→S 0, 0, 0: mean 60 / 8 = 7.5 m.
     for (metric, want) in [
         ("jaccard", 0.6),
         ("dice", 0.75),
         ("precision", 0.6),
         ("recall", 1.0),
         ("brier", 0.25),
+        ("boundary_mean_m", 7.5),
+        ("hausdorff_m", 30.0),
+        ("buffered_precision", 0.6),
+        ("buffered_recall", 1.0),
+        ("buffered_dice", 0.75),
     ] {
         assert_metric(&card, "uniform_growth", "feds", metric, Some(want));
     }
@@ -218,7 +240,10 @@ fn scorecard_matches_hand_values() {
         ("uniform_growth", 0.8),
     ] {
         assert_metric(&card, entrant, "wfigs_final", "precision", Some(want));
-        for metric in ["jaccard", "dice", "recall", "brier"] {
+        for metric in ["jaccard", "dice", "recall", "brier"]
+            .into_iter()
+            .chain(TOLERANT_METRICS)
+        {
             assert_metric(&card, entrant, "wfigs_final", metric, None);
         }
     }
@@ -255,6 +280,37 @@ fn scorecard_matches_hand_values() {
     );
 }
 
+const TOLERANT_METRICS: [&str; 5] = [
+    "boundary_mean_m",
+    "hausdorff_m",
+    "buffered_precision",
+    "buffered_recall",
+    "buffered_dice",
+];
+
+#[test]
+fn empty_target_writes_null_tolerant_metrics() {
+    let dir = scratch("empty-target");
+    hand_run(&dir);
+    let mut obs = hand_observations();
+    obs.target = mask(6, 1, &[0; 6]);
+    let opts = ScoreOptions {
+        uniform_rate_m_per_h: Some(5.0),
+        brier_radius_m: 60.0,
+        buffer_m: DEFAULT_BUFFER_M,
+    };
+    score_run(&dir, &obs, &opts).unwrap();
+    let card: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("scorecard.json")).unwrap())
+            .unwrap();
+    assert_eq!(card["buffer_m"], 375.0, "buffer_m: {}", card["buffer_m"]);
+    for entrant in ["firespread", "persistence", "uniform_growth"] {
+        for metric in TOLERANT_METRICS {
+            assert_metric(&card, entrant, "feds", metric, None);
+        }
+    }
+}
+
 #[test]
 fn confusion_codes_label_every_cell() {
     // 2 x 3: forecast {0, 1, 4}, target {0, 2, 5}.
@@ -285,6 +341,7 @@ fn score_run_writes_the_confusion_map() {
     let opts = ScoreOptions {
         uniform_rate_m_per_h: Some(5.0),
         brier_radius_m: 60.0,
+        buffer_m: DEFAULT_BUFFER_M,
     };
     let out = score_run(&dir, &hand_observations(), &opts).unwrap();
     let path = dir.join("confusion_h12.tif");
@@ -318,6 +375,7 @@ fn fitted_rate_is_the_fitted_radius_over_12_hours() {
     let opts = ScoreOptions {
         uniform_rate_m_per_h: None,
         brier_radius_m: 60.0,
+        buffer_m: DEFAULT_BUFFER_M,
     };
     let out = score_run(&dir, &obs, &opts).unwrap();
     let ug = &out.scorecard.uniform_growth;
@@ -429,6 +487,7 @@ async fn ensemble_then_score(runs_dir: &Path) -> (Vec<u8>, Vec<u8>) {
     let opts = ScoreOptions {
         uniform_rate_m_per_h: None,
         brier_radius_m: 600.0,
+        buffer_m: DEFAULT_BUFFER_M,
     };
     score_run(&summary.run_dir, &obs, &opts).unwrap();
     (

@@ -101,8 +101,12 @@ The box is the run grid from `data/extent.json`. The extract is about 3.4 MB.
    the misses fade, because precision does not count them. Select recall,
    and the false alarms fade. Select burn probability to go back. Runs scored before this layer existed have no confusion file.
    To add it, run `firespread score` on the run again.
-4. Change the scorecard metric: Jaccard, Dice, precision, recall and Brier.
-   The chart compares firespread with persistence and uniform growth.
+4. Change the scorecard metric: Jaccard, Dice, precision, recall, Brier, mean
+   boundary distance, Hausdorff distance, and buffered precision, recall and
+   Dice. The chart compares firespread with persistence and uniform growth.
+   The two distance metrics use an axis in meters. In w1, show mean boundary
+   distance and buffered Dice: firespread is the best of the three entrants
+   on both, but not on Jaccard.
 5. Point to the WFIGS table: the share of each forecast inside the official
    final perimeter.
 6. Point to the burned area chart: the ensemble band and median against the
@@ -216,7 +220,6 @@ scorecards.
 These items are on the roadmap and are not in the demo:
 
 - The FireBench HDF5 package of the case.
-- Boundary distance, Hausdorff distance and buffered overlap metrics.
 - Crown fire.
 - Lean proofs (Phase 5a, after the hackathon). The first proofs cover the
   metrics: Jaccard and Dice lie in [0, 1], and Dice equals 2J / (1 + J). Later

@@ -16,7 +16,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
 use crate::ensemble::EnsembleArgs;
-use crate::score::{DEFAULT_BRIER_RADIUS_M, ScoreOptions};
+use crate::score::{DEFAULT_BRIER_RADIUS_M, DEFAULT_BUFFER_M, ScoreOptions};
 use crate::settings::RunSettings;
 
 #[derive(Debug, Parser)]
@@ -69,6 +69,9 @@ enum Command {
         /// Radius of the Brier domain around the start perimeter, m.
         #[arg(long, default_value_t = DEFAULT_BRIER_RADIUS_M)]
         brier_radius_m: f64,
+        /// Tolerance of the buffered precision, recall and Dice, m.
+        #[arg(long, default_value_t = DEFAULT_BUFFER_M)]
+        buffer_m: f64,
     },
 }
 
@@ -128,10 +131,12 @@ async fn main() -> Result<()> {
             data,
             uniform_rate_m_per_h,
             brier_radius_m,
+            buffer_m,
         } => {
             let opts = ScoreOptions {
                 uniform_rate_m_per_h,
                 brier_radius_m,
+                buffer_m,
             };
             let out = tokio::task::spawn_blocking(move || score::score(&run, &data, &opts))
                 .await
