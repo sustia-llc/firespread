@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "run_id": "fixture-w1",
+  "window": {
+    "name": "w1",
+    "start_t": "2022-04-22T12:00:00",
+    "target_t": "2022-04-23T00:00:00",
+    "fireids": [
+      0
+    ]
+  },
+  "grid": {
+    "nx": 8,
+    "ny": 8,
+    "dx": 1000.0,
+    "dy": 1000.0,
+    "origin_x": -844180.0,
+    "origin_y": 1467820.0,
+    "epsg": 5070,
+    "nodata": -9999.0
+  },
+  "inputs": {},
+  "hrrr_source": "synthetic",
+  "seed": 0,
+  "wind_limit": "rothermel",
+  "members": 0,
+  "horizons_h": [
+    1,
+    3,
+    6,
+    12
+  ],
+  "outputs": {
+    "burn_probability_h1": "burn_probability_h1.tif",
+    "burn_probability_h3": "burn_probability_h3.tif",
+    "burn_probability_h6": "burn_probability_h6.tif",
+    "burn_probability_h12": "burn_probability_h12.tif"
+  }
+}

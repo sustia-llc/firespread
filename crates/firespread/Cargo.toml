@@ -9,5 +9,18 @@ description = "Command-line entry point for the firespread engine"
 name = "firespread"
 path = "src/main.rs"
 
+[[example]]
+name = "serve"
+required-features = ["serve"]
+
+[features]
+serve = ["dep:axum", "dep:tower-http", "dep:tokio"]
+
 [dependencies]
 thiserror.workspace = true
+axum = { version = "0.8.9", optional = true }
+tower-http = { version = "0.7.1", features = ["fs"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"], optional = true }
+
+[dev-dependencies]
+anyhow = "1"

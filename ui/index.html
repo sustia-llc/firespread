@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>firespread forecast</title>
+    <link rel="stylesheet" href="vendor/leaflet-1.9.4/leaflet.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="fixture-banner" role="alert">FIXTURE DATA: synthetic values, not a forecast</div>
+    <header>
+      <h1>firespread</h1>
+      <span class="meta">run <span id="run-id" class="mono">-</span></span>
+      <span class="meta">window <span id="window" class="mono">-</span></span>
+      <span id="status" class="mono">loading</span>
+    </header>
+    <main>
+      <div id="map"></div>
+      <aside>
+        <section id="panel-probability">
+          <h2>Burn probability</h2>
+          <div class="row">
+            <input id="hour-slider" type="range" min="0" max="0" step="1" value="0" aria-label="forecast hour" />
+            <span id="hour-label" class="mono">-</span>
+          </div>
+          <div id="legend-bar" class="legend-bar"></div>
+          <div class="legend-ticks mono"><span>0</span><span>0.25</span><span>0.5</span><span>0.75</span><span>1</span></div>
+        </section>
+        <section id="panel-scorecard">
+          <h2>Scorecard</h2>
+          <div class="row">
+            <label for="metric">metric</label>
+            <select id="metric">
+              <option value="jaccard" selected>jaccard</option>
+              <option value="dice">dice</option>
+              <option value="precision">precision</option>
+              <option value="recall">recall</option>
+              <option value="brier">brier</option>
+            </select>
+          </div>
+          <div id="scorecard-chart"></div>
+        </section>
+        <section id="panel-area">
+          <h2>Burned area by hour</h2>
+          <div id="area-chart"></div>
+        </section>
+      </aside>
+    </main>
+    <script src="vendor/leaflet-1.9.4/leaflet.js"></script>
+    <script src="vendor/proj4-2.22.0/proj4.js"></script>
+    <script src="vendor/geotiff-3.0.5/geotiff.js"></script>
+    <script src="vendor/georaster-1.6.0/georaster.browser.bundle.min.js"></script>
+    <script src="vendor/georaster-layer-for-leaflet-4.1.2/georaster-layer-for-leaflet.min.js"></script>
+    <script src="vendor/pmtiles-4.5.0/pmtiles.js"></script>
+    <script src="vendor/protomaps-leaflet-5.1.0/protomaps-leaflet.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

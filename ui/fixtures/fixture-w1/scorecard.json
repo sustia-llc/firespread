@@ -1,0 +1,115 @@
+{
+  "run_id": "fixture-w1",
+  "window": "w1",
+  "observed": "synthetic",
+  "rows": [
+    {
+      "entrant": "firespread",
+      "horizon_h": 1,
+      "jaccard": 0.5,
+      "dice": 0.6,
+      "precision": 0.7,
+      "recall": 0.8,
+      "brier": 0.1
+    },
+    {
+      "entrant": "persistence",
+      "horizon_h": 1,
+      "jaccard": 0.4,
+      "dice": 0.5,
+      "precision": 0.9,
+      "recall": 0.4,
+      "brier": null
+    },
+    {
+      "entrant": "uniform_growth",
+      "horizon_h": 1,
+      "jaccard": 0.45,
+      "dice": 0.55,
+      "precision": null,
+      "recall": null,
+      "brier": null
+    },
+    {
+      "entrant": "firespread",
+      "horizon_h": 3,
+      "jaccard": 0.4,
+      "dice": 0.5,
+      "precision": 0.6,
+      "recall": 0.7,
+      "brier": 0.15
+    },
+    {
+      "entrant": "persistence",
+      "horizon_h": 3,
+      "jaccard": 0.3,
+      "dice": 0.4,
+      "precision": 0.9,
+      "recall": 0.3,
+      "brier": null
+    },
+    {
+      "entrant": "uniform_growth",
+      "horizon_h": 3,
+      "jaccard": 0.35,
+      "dice": 0.45,
+      "precision": null,
+      "recall": null,
+      "brier": null
+    },
+    {
+      "entrant": "firespread",
+      "horizon_h": 6,
+      "jaccard": 0.3,
+      "dice": 0.4,
+      "precision": 0.5,
+      "recall": 0.6,
+      "brier": 0.2
+    },
+    {
+      "entrant": "persistence",
+      "horizon_h": 6,
+      "jaccard": 0.2,
+      "dice": 0.3,
+      "precision": 0.9,
+      "recall": 0.2,
+      "brier": null
+    },
+    {
+      "entrant": "uniform_growth",
+      "horizon_h": 6,
+      "jaccard": 0.25,
+      "dice": 0.35,
+      "precision": null,
+      "recall": null,
+      "brier": null
+    },
+    {
+      "entrant": "firespread",
+      "horizon_h": 12,
+      "jaccard": 0.2,
+      "dice": 0.3,
+      "precision": 0.4,
+      "recall": 0.5,
+      "brier": 0.25
+    },
+    {
+      "entrant": "persistence",
+      "horizon_h": 12,
+      "jaccard": 0.1,
+      "dice": 0.2,
+      "precision": 0.9,
+      "recall": 0.1,
+      "brier": null
+    },
+    {
+      "entrant": "uniform_growth",
+      "horizon_h": 12,
+      "jaccard": 0.15,
+      "dice": 0.25,
+      "precision": null,
+      "recall": null,
+      "brier": null
+    }
+  ]
+}
