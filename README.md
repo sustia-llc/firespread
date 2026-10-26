@@ -283,9 +283,12 @@ The page shows:
 
 - The burn probability map, with a slider for the forecast hour.
 - The observed perimeter at the end of the window.
-- The confusion map at the scored hour: green hits, orange misses and purple
-  false alarms. The layer is off by default. If the run has no
-  confusion file, the page skips this layer.
+- The confusion map at the scored hour: green hits, blue misses and magenta
+  false alarms. A radio button selects either the confusion map or the burn
+  probability map. Burn probability is selected by default. With precision
+  selected in the metric menu, misses are faded. With recall selected, false
+  alarms are faded. If the run has no confusion file, the page skips this
+  layer.
 - A hillshade of the terrain.
 - A street basemap from `data/basemap/region.pmtiles`. If that file is
   missing, the page skips this layer.

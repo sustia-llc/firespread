@@ -13,8 +13,8 @@
   --observed-halo: #eef0eb;
   /* Confusion map codes 1 (hit), 2 (miss), 3 (false alarm); code 0 is transparent. */
   --confusion-hit: #1a9850;
-  --confusion-miss: #f46d0e;
-  --confusion-false-alarm: #8e3fb5;
+  --confusion-miss: #2c7bb6;
+  --confusion-false-alarm: #d01c8b;
 }
 
 @media (prefers-color-scheme: dark) {

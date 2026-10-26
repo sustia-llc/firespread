@@ -92,11 +92,14 @@ The box is the run grid from `data/extent.json`. The extract is about 3.4 MB.
 
 1. Move the hour slider from h+1 to h+12. The colored area grows from the start
    perimeter. The start perimeter stays dark red, because every member burns it.
-2. Turn the map layers on and off: burn probability, observed perimeter,
-   confusion map, hillshade and street basemap.
-3. Turn on the confusion map. It shows where the forecast was right and
-   wrong at the scored hour: green hits, orange misses and purple false
-   alarms. Runs scored before this layer existed have no confusion file.
+2. Turn the map layers on and off: observed perimeter, hillshade and street
+   basemap.
+3. Select the confusion map radio button. It replaces the burn probability
+   map and shows where the forecast was right and wrong at the scored hour:
+   green hits, blue misses and magenta false alarms. The hour slider is off
+   while the confusion map shows. Select precision in the metric menu, and
+   the misses fade, because precision does not count them. Select recall,
+   and the false alarms fade. Select burn probability to go back. Runs scored before this layer existed have no confusion file.
    To add it, run `firespread score` on the run again.
 4. Change the scorecard metric: Jaccard, Dice, precision, recall and Brier.
    The chart compares firespread with persistence and uniform growth.

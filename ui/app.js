@@ -18,6 +18,10 @@
     [1.0, [189, 0, 38]],
   ];
   var OVERLAY_OPACITY = 0.75;
+  var CONFUSION_OPACITY = 0.9;
+  // Confusion codes drawn faded per metric: 2 miss, 3 false alarm.
+  var CONFUSION_FADED = { precision: [2], recall: [3] };
+  var CONFUSION_FADED_ALPHA = 0.15;
   var PMTILES_OPACITY = 0.45;
   var ENTRANTS = ["firespread", "persistence", "uniform_growth"];
   var SVG_NS = "http://www.w3.org/2000/svg";
@@ -42,7 +46,7 @@
     areaChart: "The burned area of the ensemble runs by hour. The band holds the middle 80 % of runs, the line is the median, and the dots are the observed areas at the window start and end.",
     layerProbability: "Burn probability at the selected hour.",
     layerObserved: "The observed fire perimeter at the end of the window, from NASA FEDS satellite data.",
-    layerConfusion: "Forecast against observed at h+{horizon}. Green is a hit: the forecast and FEDS both burned. Orange is a miss: FEDS burned and the forecast did not. Purple is a false alarm: the forecast burned and FEDS did not. The forecast is the cells with burn probability 0.5 or more.",
+    layerConfusion: "Forecast against observed at h+{horizon}. Green is a hit: the forecast and FEDS both burned. Blue is a miss: FEDS burned and the forecast did not. Magenta is a false alarm: the forecast burned and FEDS did not. The forecast is the cells with burn probability 0.5 or more. With precision selected, misses are faded, because precision does not count them. With recall selected, false alarms are faded.",
     layerHillshade: "Shaded terrain relief.",
     layerVector: "Roads, places and water. This layer shows only when the basemap file is present.",
   };
@@ -289,8 +293,32 @@
     layers.addOverlay(layer, layerName("Observed perimeter", "layerObserved"));
   }
 
+  // The burn probability and confusion rasters stay on the map; the layer
+  // control's radio pair holds empty proxy layers, and `applyMode` shows one
+  // raster by opacity. The hour slider is disabled while the confusion map
+  // shows.
+  var mapMode = "probability";
+  var probabilityProxy = L.layerGroup();
+  var confusionProxy = L.layerGroup();
+  var showProbabilityHour = null;
+  var confusionRaster = null;
+
+  // `#rrggbb` as rgba with alpha CONFUSION_FADED_ALPHA.
+  function fade(hex) {
+    var n = parseInt(hex.slice(1), 16);
+    return "rgba(" + (n >> 16) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + CONFUSION_FADED_ALPHA + ")";
+  }
+
+  function applyMode(mode) {
+    mapMode = mode;
+    if (showProbabilityHour) showProbabilityHour();
+    if (confusionRaster) confusionRaster.setOpacity(mode === "confusion" ? CONFUSION_OPACITY : 0);
+    document.getElementById("hour-slider").disabled = mode === "confusion";
+  }
+
   // Confusion codes of `run/confusion_h<N>.tif`, N the scorecard's horizon:
-  // 1 hit, 2 miss, 3 false alarm; 0 and nodata are transparent. Off by default.
+  // 1 hit, 2 miss, 3 false alarm; 0 and nodata are transparent. Hidden until
+  // its radio button is selected.
   async function addConfusion(map, layers) {
     var card = await fetchOrNull("run/scorecard.json", "json");
     var row = card && Array.isArray(card.rows) ? card.rows.filter(isFeds)[0] : undefined;
@@ -315,17 +343,31 @@
       css.getPropertyValue("--confusion-false-alarm").trim(),
     ];
     var nodata = g.noDataValue;
-    var layer = new GeoRasterLayer({
-      georaster: g,
-      opacity: OVERLAY_OPACITY,
-      resolution: 128,
-      pixelValuesToColorFn: function (values) {
+    var metricEl = document.getElementById("metric");
+    // The codes the selected metric does not count draw faded: precision
+    // does not count misses, recall does not count false alarms.
+    function colorFn() {
+      var faded = CONFUSION_FADED[metricEl.value] || [];
+      return function (values) {
         var v = values[0];
-        if (v === nodata) return null;
-        return colors[v] || null;
-      },
+        if (v === nodata || !colors[v]) return null;
+        return faded.indexOf(v) >= 0 ? fade(colors[v]) : colors[v];
+      };
+    }
+    confusionRaster = new GeoRasterLayer({
+      georaster: g,
+      opacity: 0,
+      resolution: 128,
+      pixelValuesToColorFn: colorFn(),
     });
-    layers.addOverlay(layer, layerName("Confusion map", "layerConfusion"));
+    confusionRaster.addTo(map);
+    metricEl.addEventListener("change", function () {
+      confusionRaster.updateColors(colorFn());
+    });
+    layers.addBaseLayer(confusionProxy, layerName("Confusion map", "layerConfusion"));
+    map.on("baselayerchange", function (e) {
+      applyMode(e.layer === confusionProxy ? "confusion" : "probability");
+    });
   }
 
   async function addProbability(map, layers, manifest) {
@@ -351,7 +393,8 @@
       })
     );
     var group = L.layerGroup().addTo(map);
-    layers.addOverlay(group, layerName("Burn probability", "layerProbability"));
+    probabilityProxy.addTo(map);
+    layers.addBaseLayer(probabilityProxy, layerName("Burn probability", "layerProbability"));
     // Every hour stays on the map so its tiles are drawn once; the slider
     // shows one hour by opacity.
     var built = rasters.map(probabilityLayer);
@@ -359,18 +402,18 @@
       layer.setOpacity(0);
       group.addLayer(layer);
     });
-    function show(i) {
+    function show() {
+      var i = parseInt(slider.value, 10);
       built.forEach(function (layer, k) {
-        layer.setOpacity(k === i ? OVERLAY_OPACITY : 0);
+        layer.setOpacity(mapMode === "probability" && k === i ? OVERLAY_OPACITY : 0);
       });
       label.textContent = "h+" + hours[i].h;
     }
     slider.max = String(hours.length - 1);
     slider.value = "0";
-    slider.addEventListener("input", function () {
-      show(parseInt(slider.value, 10));
-    });
-    show(0);
+    slider.addEventListener("input", show);
+    showProbabilityHour = show;
+    show();
   }
 
   // ---- inline SVG charts ----
