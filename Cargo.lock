@@ -334,6 +334,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tiff",
  "tokio",
  "tokio-rayon",
  "tokio-util",

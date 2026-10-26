@@ -1,9 +1,9 @@
-//! One-shot loads of the static rasters of a run: fuels, terrain and the
-//! start mask.
+//! One-shot loads of the static rasters of a run: fuels, terrain, the start
+//! mask and the barrier roads.
 
 use std::path::{Path, PathBuf};
 
-use firespread_ensemble::{EnsembleError, HourlyLayers, Layers};
+use firespread_ensemble::{EnsembleError, HourlyLayers, Layers, apply_road_barriers};
 use firespread_grid::{Grid, GridHeader, MaskGrid, read_geotiff, read_geotiff_u8};
 
 use crate::executor::Executor;
@@ -112,10 +112,28 @@ async fn load_start_mask(exec: &Executor, path: PathBuf) -> Result<MaskGrid> {
     .await?
 }
 
-/// Loads the fuels, terrain and start mask concurrently, each read on
-/// `exec`: `FBFM40.tif`, `SlpD.tif`, `Asp.tif`, `CH.tif`, `CBH.tif`,
-/// `CC.tif` (f32) and `water.tif` (u8) from `grid_dir`, and the u8 start
-/// mask at `start_mask`.
+/// Reads the u8 `roads.tif` from `grid_dir` on `exec` when `codes` is
+/// non-empty; `None` when it is empty.
+async fn load_roads(exec: &Executor, grid_dir: PathBuf, codes: &[u8]) -> Result<Option<MaskGrid>> {
+    if codes.is_empty() {
+        return Ok(None);
+    }
+    exec.run("roads load", move || {
+        read_geotiff_u8(grid_dir.join("roads.tif"))
+            .map(Some)
+            .map_err(grid_err("reading the roads layer"))
+    })
+    .await?
+}
+
+/// Loads the fuels, terrain, start mask and, for a non-empty
+/// `road_barrier_codes`, the roads concurrently, each read on `exec`:
+/// `FBFM40.tif`, `SlpD.tif`, `Asp.tif`, `CH.tif`, `CBH.tif`, `CC.tif` (f32)
+/// and `water.tif`, `roads.tif` (u8) from `grid_dir`, and the u8 start mask
+/// at `start_mask`. For a non-empty `road_barrier_codes`, applies
+/// [`apply_road_barriers`] to the water layer on `exec`. Returns the inputs
+/// and the number of cells the road barriers made non-burnable (0 for an
+/// empty `road_barrier_codes`).
 ///
 /// # Errors
 /// [`AgentError::Grid`] for a failed read, [`AgentError::Ensemble`] wrapping
@@ -125,39 +143,60 @@ pub async fn load_grid_inputs(
     exec: &Executor,
     grid_dir: &Path,
     start_mask: &Path,
-) -> Result<GridInputs> {
-    let (fuels, terrain, mask) = tokio::try_join!(
+    road_barrier_codes: &[u8],
+) -> Result<(GridInputs, usize)> {
+    let (fuels, terrain, mask, roads) = tokio::try_join!(
         load_fuels(exec, grid_dir.to_path_buf()),
         load_terrain(exec, grid_dir.to_path_buf()),
         load_start_mask(exec, start_mask.to_path_buf()),
+        load_roads(exec, grid_dir.to_path_buf(), road_barrier_codes),
     )?;
     let geometry = |h: &GridHeader| GridHeader { nodata: 0.0, ..*h };
     let base = geometry(&fuels.fbfm40.header);
     for (layer, h) in [
-        ("SlpD", &terrain.slope.header),
-        ("Asp", &terrain.aspect.header),
-        ("CH", &fuels.ch.header),
-        ("CBH", &fuels.cbh.header),
-        ("CC", &fuels.cc.header),
-        ("water", &fuels.water.header),
-        ("ignition", &mask.header),
+        ("SlpD", Some(&terrain.slope.header)),
+        ("Asp", Some(&terrain.aspect.header)),
+        ("CH", Some(&fuels.ch.header)),
+        ("CBH", Some(&fuels.cbh.header)),
+        ("CC", Some(&fuels.cc.header)),
+        ("water", Some(&fuels.water.header)),
+        ("ignition", Some(&mask.header)),
+        ("roads", roads.as_ref().map(|r| &r.header)),
     ] {
-        if !base.same_grid(&geometry(h)) {
+        if h.is_some_and(|h| !base.same_grid(&geometry(h))) {
             return Err(AgentError::Ensemble {
                 stage: "checking the layer geometry",
                 source: EnsembleError::LayerMismatch { layer },
             });
         }
     }
-    Ok(GridInputs {
-        header: fuels.fbfm40.header,
-        fbfm40: fuels.fbfm40.data,
-        slope_deg: terrain.slope.data,
-        aspect_deg: terrain.aspect.data,
-        water: fuels.water.data,
-        ignited: mask.data,
-        canopy_height_m: fuels.ch.data,
-        canopy_base_height_m: fuels.cbh.data,
-        canopy_cover_pct: fuels.cc.data,
-    })
+    let (water, road_barrier_cells) = match roads {
+        None => (fuels.water.data, 0),
+        Some(roads) => {
+            let (mut water, codes) = (fuels.water.data, road_barrier_codes.to_vec());
+            exec.run("road barriers", move || {
+                apply_road_barriers(&mut water, &roads.data, &codes)
+                    .map(|cells| (water, cells))
+                    .map_err(|source| AgentError::Ensemble {
+                        stage: "applying the road barriers",
+                        source,
+                    })
+            })
+            .await??
+        }
+    };
+    Ok((
+        GridInputs {
+            header: fuels.fbfm40.header,
+            fbfm40: fuels.fbfm40.data,
+            slope_deg: terrain.slope.data,
+            aspect_deg: terrain.aspect.data,
+            water,
+            ignited: mask.data,
+            canopy_height_m: fuels.ch.data,
+            canopy_base_height_m: fuels.cbh.data,
+            canopy_cover_pct: fuels.cc.data,
+        },
+        road_barrier_cells,
+    ))
 }

@@ -1,18 +1,14 @@
 //! The `ensemble` command: one forecast run of a window through the agents
-//! [`Forecaster`], with barrier roads folded into the water layer.
+//! [`Forecaster`], with barrier road codes passed to its files source.
 
-use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail, ensure};
-use firespread_agents::{
-    EnsembleSpec, Event, Executor, ForecastConfig, Forecaster, GridInputs, Published, Source,
-    load_grid_inputs,
-};
-use firespread_ensemble::{HourlyConfig, HourlyPerturbation, WindowWeather, apply_road_barriers};
-use firespread_grid::{ForecastWindow, GridHeader, Manifest, read_geotiff_u8};
+use firespread_agents::{EnsembleSpec, Event, ForecastConfig, Forecaster, Published, Source};
+use firespread_ensemble::{HourlyConfig, HourlyPerturbation};
+use firespread_grid::{ForecastWindow, Manifest};
 use serde::{Deserialize, Serialize};
 
 use crate::settings::{RunSettings, load_window};
@@ -20,10 +16,6 @@ use crate::timefmt::{feds_label, parse_hour};
 
 /// Longest wait for [`Forecaster::shutdown`] to drain the agents.
 pub const DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// The weather source the manifest records.
-pub const HRRR_SOURCE: &str =
-    "weather/index.json: HRRR u10, v10, t2m, rh2m, tcc per hour on the grid";
 
 /// File of per-member burned cell counts in a run directory.
 pub const MEMBERS_FILE: &str = "members.json";
@@ -93,83 +85,14 @@ pub struct RunSummary {
     pub total_s: f64,
 }
 
-/// The inputs map of the manifest for a run whose start mask is `start_mask`.
-fn manifest_inputs(start_mask: &str, roads: bool) -> BTreeMap<String, String> {
-    let mut inputs: BTreeMap<String, String> = [
-        ("fbfm40", "grid/FBFM40.tif"),
-        ("slope", "grid/SlpD.tif"),
-        ("aspect", "grid/Asp.tif"),
-        ("canopy_height", "grid/CH.tif"),
-        ("canopy_base_height", "grid/CBH.tif"),
-        ("canopy_cover", "grid/CC.tif"),
-        ("water", "grid/water.tif"),
-        ("start_mask", start_mask),
-        ("weather_index", "weather/index.json"),
-        ("windows", "windows.json"),
-    ]
-    .into_iter()
-    .map(|(k, v)| (k.to_string(), v.to_string()))
-    .collect();
-    if roads {
-        inputs.insert("roads".to_string(), "grid/roads.tif".to_string());
-    }
-    inputs
-}
-
-fn geometry(h: &GridHeader) -> GridHeader {
-    GridHeader { nodata: 0.0, ..*h }
-}
-
-/// Loads the window's static rasters, start mask and weather from `args.data`,
-/// applies the barrier road codes, and runs [`forecast`].
+/// Runs window `args.window` of `args.data` through [`forecast`] on
+/// [`Source::Files`] with the settings' road barrier codes.
 pub async fn run(args: &EnsembleArgs, stop: impl Future<Output = ()>) -> Result<RunSummary> {
     let window = load_window(&args.data, &args.window)?;
     let start_mask = format!(
         "obs/feds/{}.tif",
         feds_label(parse_hour(&window.label_start)?)
     );
-    let mut grid = {
-        let exec = Executor::with_threads(args.threads)?;
-        load_grid_inputs(&exec, &args.data.join("grid"), &args.data.join(&start_mask))
-            .await
-            .context("loading the static rasters")?
-    };
-    let codes = &args.settings.road_barrier_codes;
-    let barrier_cells = if codes.is_empty() {
-        0
-    } else {
-        let path = args.data.join("grid/roads.tif");
-        let roads =
-            read_geotiff_u8(&path).with_context(|| format!("reading {}", path.display()))?;
-        ensure!(
-            geometry(&roads.header).same_grid(&geometry(&grid.header)),
-            "{} is not on the FBFM40 grid",
-            path.display()
-        );
-        apply_road_barriers(&mut grid.water, &roads.data, codes)?
-    };
-    let hours = args
-        .settings
-        .horizons_h
-        .iter()
-        .copied()
-        .max()
-        .context("no horizons")?;
-    let hourly = HourlyConfig::default();
-    let weather = {
-        let (dir, name, header, moisture) = (
-            args.data.join("weather"),
-            window.name.clone(),
-            grid.header,
-            hourly.moisture,
-        );
-        tokio::task::spawn_blocking(move || {
-            WindowWeather::load(&dir, &name, hours as usize, &header, &moisture)
-        })
-        .await
-        .context("weather load task")?
-        .context("loading the weather")?
-    };
     let config = ForecastConfig {
         run_id: run_id(&window.name, args.seed, args.members),
         runs_dir: args.runs_dir.clone(),
@@ -179,7 +102,7 @@ pub async fn run(args: &EnsembleArgs, stop: impl Future<Output = ()>) -> Result<
             target_t: window.target_t,
             fireids: window.fireids,
         },
-        hourly,
+        hourly: HourlyConfig::default(),
         ensemble: EnsembleSpec {
             seed: args.seed,
             members: args.members,
@@ -188,25 +111,12 @@ pub async fn run(args: &EnsembleArgs, stop: impl Future<Output = ()>) -> Result<
         },
         threads: args.threads,
     };
-    let record = Record {
-        inputs: manifest_inputs(&start_mask, !codes.is_empty()),
-        hrrr_source: HRRR_SOURCE.to_string(),
-        settings: args.settings.clone(),
-        barrier_cells,
+    let source = Source::Files {
+        data_dir: args.data.clone(),
+        start_mask,
+        road_barrier_codes: args.settings.road_barrier_codes.clone(),
     };
-    forecast(config, grid, weather, &record, stop).await
-}
-
-/// What [`forecast`] writes into the run directory besides the agents' files.
-#[derive(Debug, Clone)]
-pub struct Record {
-    /// The manifest's `inputs`.
-    pub inputs: BTreeMap<String, String>,
-    /// The manifest's `hrrr_source`.
-    pub hrrr_source: String,
-    pub settings: RunSettings,
-    /// Cells the barrier codes made non-burnable.
-    pub barrier_cells: usize,
+    forecast(config, source, &args.settings, stop).await
 }
 
 async fn drain(forecaster: &Forecaster) -> Result<()> {
@@ -221,28 +131,23 @@ async fn drain(forecaster: &Forecaster) -> Result<()> {
     Ok(())
 }
 
-/// Runs `config` on in-memory `grid` and `weather` through a [`Forecaster`]
-/// until it publishes, then drains it within [`DRAIN_TIMEOUT`] and writes the
-/// manifest's `inputs` and `hrrr_source` from `record`, [`MEMBERS_FILE`] and
-/// [`RUN_CONFIG_FILE`]. When `stop` completes first, cancels the run, drains
-/// it within [`DRAIN_TIMEOUT`] and fails.
+/// Runs `config` on `source` through a [`Forecaster`] until it publishes,
+/// then drains it within [`DRAIN_TIMEOUT`] and writes [`MEMBERS_FILE`] and
+/// [`RUN_CONFIG_FILE`], the latter recording `settings`. When `stop`
+/// completes first, cancels the run, drains it within [`DRAIN_TIMEOUT`] and
+/// fails.
 pub async fn forecast(
     config: ForecastConfig,
-    grid: GridInputs,
-    weather: WindowWeather,
-    record: &Record,
+    source: Source,
+    settings: &RunSettings,
     stop: impl Future<Output = ()>,
 ) -> Result<RunSummary> {
     let (threads, members_requested) = (config.threads, config.ensemble.members);
     let t = Instant::now();
-    let forecaster = Forecaster::new(
-        config,
-        Source::Memory {
-            grid: Box::new(grid),
-            weather,
-        },
-    )
-    .await?;
+    let forecaster = Forecaster::new(config, source)
+        .await
+        .context("loading the run inputs")?;
+    let road_barrier_cells = forecaster.road_barrier_cells();
     let inbox = forecaster.inbox();
     tokio::pin!(stop);
     let mut finished = 0_u32;
@@ -275,12 +180,7 @@ pub async fn forecast(
     let total_s = t.elapsed().as_secs_f64();
     drain(&forecaster).await?;
 
-    let manifest_path = &published.manifest;
-    let mut manifest = Manifest::read(manifest_path)?;
-    manifest.inputs.clone_from(&record.inputs);
-    manifest.hrrr_source.clone_from(&record.hrrr_source);
-    manifest.write(manifest_path)?;
-
+    let manifest = Manifest::read(&published.manifest)?;
     let outcome = &published.outcome;
     let members = outcome
         .completed
@@ -309,9 +209,9 @@ pub async fn forecast(
             members_requested,
             members_completed: outcome.counts.members,
             threads,
-            road_barrier_codes: record.settings.road_barrier_codes.clone(),
-            road_barrier_cells: record.barrier_cells,
-            horizons_h: record.settings.horizons_h.clone(),
+            road_barrier_codes: settings.road_barrier_codes.clone(),
+            road_barrier_cells,
+            horizons_h: settings.horizons_h.clone(),
         },
     )?;
     Ok(RunSummary {

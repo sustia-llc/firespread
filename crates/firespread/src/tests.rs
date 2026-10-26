@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use firespread_agents::{EnsembleSpec, ForecastConfig, GridInputs};
+use firespread_agents::{EnsembleSpec, ForecastConfig, GridInputs, Source};
 use firespread_ensemble::{
     DeadFuelMoisture, HourFields, HourlyConfig, HourlyPerturbation, RawHour, WindowWeather,
 };
@@ -14,7 +14,7 @@ use firespread_grid::{
 use firespread_metrics::Mask;
 use serde_json::Value;
 
-use crate::ensemble::{MEMBERS_FILE, MemberArea, MembersFile, Record, forecast, write_json};
+use crate::ensemble::{MEMBERS_FILE, MemberArea, MembersFile, forecast, write_json};
 use crate::score::{Observations, ScoreOptions, score_run};
 use crate::settings::RunSettings;
 use crate::timefmt::parse_hour;
@@ -335,15 +335,18 @@ async fn ensemble_then_score(runs_dir: &Path) -> (Vec<u8>, Vec<u8>) {
         },
         threads: 3,
     };
-    let record = Record {
-        inputs: BTreeMap::new(),
-        hrrr_source: "synthetic".to_string(),
-        settings: RunSettings::default(),
-        barrier_cells: 0,
+    let source = Source::Memory {
+        grid: Box::new(grid),
+        weather,
     };
-    let summary = forecast(config, grid, weather, &record, std::future::pending())
-        .await
-        .unwrap();
+    let summary = forecast(
+        config,
+        source,
+        &RunSettings::default(),
+        std::future::pending(),
+    )
+    .await
+    .unwrap();
     let n = NX * NX;
     let mut target = vec![0_u8; n];
     for r in 25..36 {

@@ -99,6 +99,7 @@ async fn main() -> Result<()> {
         Source::Files {
             data_dir,
             start_mask,
+            road_barrier_codes: Vec::new(),
         },
     )
     .await?;

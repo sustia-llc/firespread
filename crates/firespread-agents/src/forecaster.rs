@@ -40,10 +40,12 @@ pub struct ForecastConfig {
 #[derive(Debug, Clone)]
 pub enum Source {
     /// `grid/` and `weather/index.json` under `data_dir`, and the start mask
-    /// at `data_dir/start_mask`.
+    /// at `data_dir/start_mask`. Cells of `grid/roads.tif` whose code is in
+    /// `road_barrier_codes` are non-burnable; an empty list reads no roads.
     Files {
         data_dir: PathBuf,
         start_mask: String,
+        road_barrier_codes: Vec<u8>,
     },
     /// Rasters and weather already in memory.
     Memory {
@@ -72,13 +74,14 @@ pub struct Forecaster {
     inbox: AsyncReceiver<Delivery<Event>>,
     exec: Arc<Executor>,
     grid: Arc<GridInputs>,
+    road_barrier_cells: usize,
     run_dir: PathBuf,
 }
 
 const HRRR_SOURCE: &str = "weather/index.json: HRRR u10, v10, t2m, rh2m, tcc per hour on the grid";
 
-fn files_inputs(start_mask: &str) -> BTreeMap<String, String> {
-    [
+fn files_inputs(start_mask: &str, roads: bool) -> BTreeMap<String, String> {
+    let mut inputs: BTreeMap<String, String> = [
         ("fbfm40", "grid/FBFM40.tif"),
         ("slope", "grid/SlpD.tif"),
         ("aspect", "grid/Asp.tif"),
@@ -92,7 +95,11 @@ fn files_inputs(start_mask: &str) -> BTreeMap<String, String> {
     ]
     .into_iter()
     .map(|(k, v)| (k.to_string(), v.to_string()))
-    .collect()
+    .collect();
+    if roads {
+        inputs.insert("roads".to_string(), "grid/roads.tif".to_string());
+    }
+    inputs
 }
 
 impl Forecaster {
@@ -113,14 +120,19 @@ impl Forecaster {
     pub async fn new(config: ForecastConfig, source: Source) -> Result<Self> {
         let horizon_max = config.ensemble.validated_horizon()?;
         let exec = Arc::new(Executor::with_threads(config.threads)?);
-        let (grid, weather, inputs, hrrr_source) = match source {
+        let (grid, road_barrier_cells, weather, inputs, hrrr_source) = match source {
             Source::Files {
                 data_dir,
                 start_mask,
+                road_barrier_codes,
             } => {
-                let grid =
-                    load_grid_inputs(&exec, &data_dir.join("grid"), &data_dir.join(&start_mask))
-                        .await?;
+                let (grid, road_barrier_cells) = load_grid_inputs(
+                    &exec,
+                    &data_dir.join("grid"),
+                    &data_dir.join(&start_mask),
+                    &road_barrier_codes,
+                )
+                .await?;
                 let weather = WeatherSource::Index {
                     weather_dir: data_dir.join("weather"),
                     window: config.window.name.clone(),
@@ -130,13 +142,15 @@ impl Forecaster {
                 };
                 (
                     grid,
+                    road_barrier_cells,
                     weather,
-                    files_inputs(&start_mask),
+                    files_inputs(&start_mask, !road_barrier_codes.is_empty()),
                     HRRR_SOURCE.to_string(),
                 )
             }
             Source::Memory { grid, weather } => (
                 *grid,
+                0,
                 WeatherSource::Memory(weather),
                 BTreeMap::new(),
                 "in-memory weather".to_string(),
@@ -157,6 +171,7 @@ impl Forecaster {
             inbox,
             exec,
             grid,
+            road_barrier_cells,
             run_dir: run_dir.clone(),
         };
 
@@ -241,6 +256,13 @@ impl Forecaster {
     #[must_use]
     pub fn grid(&self) -> &Arc<GridInputs> {
         &self.grid
+    }
+
+    /// Cells the road barrier codes of [`Source::Files`] made non-burnable;
+    /// 0 for [`Source::Memory`].
+    #[must_use]
+    pub fn road_barrier_cells(&self) -> usize {
+        self.road_barrier_cells
     }
 
     /// The directory Publisher writes into.
