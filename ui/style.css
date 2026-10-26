@@ -167,6 +167,28 @@ select {
   font-style: italic;
 }
 
+table.containment {
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+table.containment caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 4px;
+}
+
+table.containment th,
+table.containment td {
+  text-align: left;
+  font-weight: 400;
+  padding: 2px 12px 2px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
 svg.chart {
   display: block;
   width: 100%;

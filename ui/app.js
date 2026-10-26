@@ -252,6 +252,37 @@
     container.appendChild(p);
   }
 
+  // Rows without an `observation` field (the fixture) count as FEDS rows.
+  function isFeds(r) {
+    return r.observation === undefined || r.observation === "feds";
+  }
+
+  // Share of each entrant's forecast cells inside the WFIGS final perimeter.
+  function drawContainment(container, card) {
+    var rows = card.rows.filter(function (r) {
+      return r.observation === "wfigs_final";
+    });
+    if (rows.length === 0) return;
+    var table = document.createElement("table");
+    table.className = "containment";
+    var cap = document.createElement("caption");
+    cap.textContent = "Inside the final perimeter (WFIGS): share of forecast cells";
+    table.appendChild(cap);
+    rows.forEach(function (r) {
+      var tr = document.createElement("tr");
+      var th = document.createElement("th");
+      th.textContent = r.entrant + " h+" + r.horizon_h;
+      var td = document.createElement("td");
+      td.textContent = r.precision === null || r.precision === undefined
+        ? "n/a"
+        : (100 * r.precision).toFixed(1) + " %";
+      tr.appendChild(th);
+      tr.appendChild(td);
+      table.appendChild(tr);
+    });
+    container.appendChild(table);
+  }
+
   function drawScorecard(container, card, metric) {
     container.innerHTML = "";
     var W = 340;
@@ -259,7 +290,7 @@
     var m = { l: 34, r: 6, t: 26, b: 28 };
     var svg = el("svg", { class: "chart", viewBox: "0 0 " + W + " " + H, role: "img" }, container);
     var horizons = [];
-    card.rows.forEach(function (r) {
+    card.rows.filter(isFeds).forEach(function (r) {
       if (horizons.indexOf(r.horizon_h) < 0) horizons.push(r.horizon_h);
     });
     horizons.sort(function (a, b) {
@@ -280,7 +311,7 @@
       var gx = m.l + gi * gw + gw * 0.1;
       ENTRANTS.forEach(function (e, ei) {
         var row = card.rows.filter(function (r) {
-          return r.horizon_h === h && r.entrant === e;
+          return r.horizon_h === h && r.entrant === e && isFeds(r);
         })[0];
         var x = gx + ei * bw;
         var v = row ? row[metric] : null;
@@ -426,6 +457,7 @@
     } else {
       var redraw = function () {
         drawScorecard(scEl, card, metricEl.value);
+        drawContainment(scEl, card);
       };
       metricEl.addEventListener("change", redraw);
       redraw();
