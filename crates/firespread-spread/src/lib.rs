@@ -6,17 +6,19 @@
 //! clockwise from north. Arrival times are seconds; `f32::INFINITY` marks an
 //! unburned cell.
 //!
-//! Each burning cell `u` spreads to the cells of a 16-neighbour stencil
-//! (offsets `(±1,0)`, `(0,±1)`, `(±1,±1)`, `(±1,±2)`, `(±2,±1)` in
-//! `(row, col)`). Along an edge of bearing `θ` the spread rate is the polar
-//! form of the fire ellipse about its rear focus (Finney 1998, RMRS-RP-4,
-//! eqs. 15-17), `r = R_u (1 - e_u) / (1 - e_u cos(θ - φ_u))`, with head rate
-//! `R_u`, eccentricity `e_u` and head azimuth `φ_u` taken from the source cell
-//! only. The edge travel time is the edge length over `r`; an edge with
-//! `r <= 0` or a non-finite `r` does not exist. An edge exists only when its
-//! destination is burnable. A diagonal edge is blocked when both orthogonal
-//! cells it cuts are non-burnable; a knight edge is blocked when either of
-//! the two cells its segment crosses is non-burnable.
+//! Each burning cell `u` spreads to the cells of the 32-neighbour [`STENCIL`]
+//! (offsets `(±1,0)`, `(0,±1)`, `(±1,±1)`, `(±1,±2)`, `(±2,±1)`, `(±1,±3)`,
+//! `(±3,±1)`, `(±2,±3)`, `(±3,±2)` in `(row, col)`), over an edge of length
+//! `dx * sqrt(dr² + dc²)`. Along an edge of bearing `θ` the spread rate is the
+//! polar form of the fire ellipse about its rear focus (Finney 1998,
+//! RMRS-RP-4, eqs. 15-17), `r = R_u (1 - e_u) / (1 - e_u cos(θ - φ_u))`, with
+//! head rate `R_u`, eccentricity `e_u` and head azimuth `φ_u` taken from the
+//! source cell only. The edge travel time is the edge length over `r`; an edge
+//! with `r <= 0` or a non-finite `r` does not exist. An edge exists only when
+//! its destination is burnable and it is not blocked by its [`Crossing`]: a
+//! move is blocked when a cell whose interior the open segment between the two
+//! cell centres meets is non-burnable, or when the segment passes through a
+//! cell corner and both cells it touches only at that corner are non-burnable.
 
 mod error;
 
@@ -207,34 +209,138 @@ pub struct WindowStats {
     pub expanded: usize,
 }
 
+/// Number of moves in [`STENCIL`].
+pub const STENCIL_LEN: usize = 32;
+
 /// The stencil as `(row offset, col offset)`, ordered by bearing clockwise
 /// from north.
-const STENCIL: [(isize, isize); 16] = [
+pub const STENCIL: [(isize, isize); STENCIL_LEN] = [
     (-1, 0),
+    (-3, 1),
     (-2, 1),
+    (-3, 2),
     (-1, 1),
+    (-2, 3),
     (-1, 2),
+    (-1, 3),
     (0, 1),
+    (1, 3),
     (1, 2),
+    (2, 3),
     (1, 1),
+    (3, 2),
     (2, 1),
+    (3, 1),
     (1, 0),
+    (3, -1),
     (2, -1),
+    (3, -2),
     (1, -1),
+    (2, -3),
     (1, -2),
+    (1, -3),
     (0, -1),
+    (-1, -3),
     (-1, -2),
+    (-2, -3),
     (-1, -1),
+    (-3, -2),
     (-2, -1),
+    (-3, -1),
 ];
 
-#[derive(Debug, Clone, Copy)]
-enum Crossing {
-    None,
-    /// Blocked when both cells are non-burnable.
-    Diagonal(isize, isize),
-    /// Blocked when either cell is non-burnable.
-    Knight(isize, isize),
+const MAX_CELLS: usize = 4;
+const MAX_CORNERS: usize = 2;
+
+type Offset = (isize, isize);
+
+/// Cells a [`STENCIL`] move passes between its source cell `(0, 0)` and its
+/// destination, as `(row, col)` offsets from the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Crossing {
+    cells: [Offset; MAX_CELLS],
+    n_cells: usize,
+    corners: [(Offset, Offset); MAX_CORNERS],
+    n_corners: usize,
+}
+
+impl Crossing {
+    /// Cells other than source and destination whose interior the open
+    /// segment between the two cell centres meets, in order along the segment.
+    #[must_use]
+    pub fn cells(&self) -> &[Offset] {
+        &self.cells[..self.n_cells]
+    }
+
+    /// For each cell corner the segment passes through, the two cells it
+    /// touches only at that corner.
+    #[must_use]
+    pub fn corner_pairs(&self) -> &[(Offset, Offset)] {
+        &self.corners[..self.n_corners]
+    }
+}
+
+/// The [`Crossing`] of move `(dr, dc)`, or `None` when the move is not in
+/// [`STENCIL`].
+#[must_use]
+pub fn crossing(dr: isize, dc: isize) -> Option<Crossing> {
+    STENCIL.contains(&(dr, dc)).then(|| crossing_of(dr, dc))
+}
+
+/// Walks the segment from `(0, 0)` to `(a, b)`, `a, b >= 0`, through the cell
+/// boundaries `row = k + 1/2` and `col = m + 1/2`, then mirrors by the signs of
+/// `(dr, dc)`. Boundary crossings are compared exactly as numerators over
+/// `2ab`; a row and a column crossing at the same point is a corner.
+fn crossing_of(dr: isize, dc: isize) -> Crossing {
+    let (a, b) = (dr.unsigned_abs(), dc.unsigned_abs());
+    let (sr, sc) = (dr.signum(), dc.signum());
+    let mut out = Crossing {
+        cells: [(0, 0); MAX_CELLS],
+        n_cells: 0,
+        corners: [((0, 0), (0, 0)); MAX_CORNERS],
+        n_corners: 0,
+    };
+    let (mut r, mut c) = (0_usize, 0_usize);
+    let (mut k, mut m) = (0_usize, 0_usize);
+    let signed = |r: usize, c: usize| -> Offset {
+        let (r, c) = (r.cast_signed(), c.cast_signed());
+        (sr * r, sc * c)
+    };
+    while k < a || m < b {
+        let row_event = (k < a).then(|| (2 * k + 1) * b);
+        let col_event = (m < b).then(|| (2 * m + 1) * a);
+        match (row_event, col_event) {
+            (Some(x), Some(y)) if x == y => {
+                if let Some(slot) = out.corners.get_mut(out.n_corners) {
+                    *slot = (signed(r + 1, c), signed(r, c + 1));
+                    out.n_corners += 1;
+                }
+                r += 1;
+                c += 1;
+                k += 1;
+                m += 1;
+            }
+            (Some(x), Some(y)) if x < y => {
+                r += 1;
+                k += 1;
+            }
+            (Some(_), None) => {
+                r += 1;
+                k += 1;
+            }
+            _ => {
+                c += 1;
+                m += 1;
+            }
+        }
+        if (r, c) != (a, b)
+            && let Some(slot) = out.cells.get_mut(out.n_cells)
+        {
+            *slot = signed(r, c);
+            out.n_cells += 1;
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -245,10 +351,23 @@ struct Edge {
     len_m: f32,
     cos: f32,
     sin: f32,
-    crossing: Crossing,
+    cells: [isize; MAX_CELLS],
+    n_cells: usize,
+    corners: [(isize, isize); MAX_CORNERS],
+    n_corners: usize,
 }
 
-fn stencil(grid: Grid) -> Result<[Edge; 16]> {
+impl Edge {
+    fn blocked(&self, burnable: &[bool], u: usize) -> bool {
+        let open = |off: isize| burnable[u.wrapping_add_signed(off)];
+        self.cells[..self.n_cells].iter().any(|&o| !open(o))
+            || self.corners[..self.n_corners]
+                .iter()
+                .any(|&(p, q)| !open(p) && !open(q))
+    }
+}
+
+fn stencil(grid: Grid) -> Result<[Edge; STENCIL_LEN]> {
     let nx = isize::try_from(grid.nx).map_err(|_| SpreadError::GridTooLarge {
         nx: grid.nx,
         ny: grid.ny,
@@ -258,22 +377,27 @@ fn stencil(grid: Grid) -> Result<[Edge; 16]> {
     Ok(STENCIL.map(|(dr, dc)| {
         let (fr, fc) = (dr as f64, dc as f64);
         let cells = fr.hypot(fc);
-        let lin = |r: isize, c: isize| r * nx + c;
-        let crossing = match (dr.abs(), dc.abs()) {
-            (1, 1) => Crossing::Diagonal(lin(dr, 0), lin(0, dc)),
-            (2, _) => Crossing::Knight(lin(dr.signum(), 0), lin(dr.signum(), dc)),
-            (_, 2) => Crossing::Knight(lin(0, dc.signum()), lin(dr, dc.signum())),
-            _ => Crossing::None,
-        };
-        Edge {
+        let lin = |(r, c): Offset| r * nx + c;
+        let x = crossing_of(dr, dc);
+        let mut edge = Edge {
             dr,
             dc,
-            offset: lin(dr, dc),
+            offset: lin((dr, dc)),
             len_m: (dx * cells) as f32,
             cos: (-fr / cells) as f32,
             sin: (fc / cells) as f32,
-            crossing,
+            cells: [0; MAX_CELLS],
+            n_cells: x.n_cells,
+            corners: [(0, 0); MAX_CORNERS],
+            n_corners: x.n_corners,
+        };
+        for (slot, &o) in edge.cells.iter_mut().zip(x.cells()) {
+            *slot = lin(o);
         }
+        for (slot, &(p, q)) in edge.corners.iter_mut().zip(x.corner_pairs()) {
+            *slot = (lin(p), lin(q));
+        }
+        edge
     }))
 }
 
@@ -382,7 +506,7 @@ impl Workspace {
             let (sin_phi, cos_phi) = fields.max_azimuth_rad[u].sin_cos();
             let numerator = head * (1.0 - e);
             let (row, col) = (u / nx, u % nx);
-            let interior = row >= 2 && row + 2 < ny && col >= 2 && col + 2 < nx;
+            let interior = row >= 3 && row + 3 < ny && col >= 3 && col + 3 < nx;
             for edge in &edges {
                 let v = if interior {
                     u.wrapping_add_signed(edge.offset)
@@ -392,19 +516,10 @@ impl Workspace {
                         None => continue,
                     }
                 };
-                if !burnable[v] {
+                if arrival_s[v] <= t_u || !burnable[v] {
                     continue;
                 }
-                let blocked = match edge.crossing {
-                    Crossing::None => false,
-                    Crossing::Diagonal(a, b) => {
-                        !burnable[u.wrapping_add_signed(a)] && !burnable[u.wrapping_add_signed(b)]
-                    }
-                    Crossing::Knight(a, b) => {
-                        !burnable[u.wrapping_add_signed(a)] || !burnable[u.wrapping_add_signed(b)]
-                    }
-                };
-                if blocked {
+                if edge.blocked(burnable, u) {
                     continue;
                 }
                 let cos_d = edge.cos * cos_phi + edge.sin * sin_phi;

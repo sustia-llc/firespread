@@ -13,24 +13,40 @@ const RADIUS_CELLS: f64 = 200.0;
 /// Time at which a circle of head rate `ROS` reaches `RADIUS_CELLS`.
 const T: f32 = (RADIUS_CELLS as f32) * DX / ROS;
 
-/// The stencil of the brief as `(row offset, col offset)`, sorted by bearing.
-const STENCIL: [(f64, f64); 16] = [
+/// The 32 stencil moves of the specification as `(row offset, col offset)`.
+const STENCIL: [(f64, f64); 32] = [
     (-1.0, 0.0),
+    (-3.0, 1.0),
     (-2.0, 1.0),
+    (-3.0, 2.0),
     (-1.0, 1.0),
+    (-2.0, 3.0),
     (-1.0, 2.0),
+    (-1.0, 3.0),
     (0.0, 1.0),
+    (1.0, 3.0),
     (1.0, 2.0),
+    (2.0, 3.0),
     (1.0, 1.0),
+    (3.0, 2.0),
     (2.0, 1.0),
+    (3.0, 1.0),
     (1.0, 0.0),
+    (3.0, -1.0),
     (2.0, -1.0),
+    (3.0, -2.0),
     (1.0, -1.0),
+    (2.0, -3.0),
     (1.0, -2.0),
+    (1.0, -3.0),
     (0.0, -1.0),
+    (-1.0, -3.0),
     (-1.0, -2.0),
+    (-2.0, -3.0),
     (-1.0, -1.0),
+    (-3.0, -2.0),
     (-2.0, -1.0),
+    (-3.0, -1.0),
 ];
 
 fn eccentricity(lb: f64) -> f64 {
@@ -159,20 +175,23 @@ fn measure(arrival: &[f32], az_deg: f64, t: f64) -> Shape {
     }
 }
 
-/// The convex polygon a uniform 16-neighbour search converges to: one vertex
+/// The convex polygon a uniform 32-neighbour search converges to: one vertex
 /// per stencil bearing at distance `head_cells * r(θ) / R` from the ignition,
-/// with `r` the polar ellipse about its rear focus. Vertices are (east, north).
+/// with `r` the polar ellipse about its rear focus, sorted by bearing.
+/// Vertices are (east, north).
 fn polygon(lb: f64, az_deg: f64, head_cells: f64) -> Vec<(f64, f64)> {
     let e = eccentricity(lb);
     let phi = az_deg.to_radians();
-    STENCIL
+    let mut by_bearing: Vec<(f64, (f64, f64))> = STENCIL
         .iter()
         .map(|&(dr, dc)| {
-            let theta = dc.atan2(-dr);
+            let theta = dc.atan2(-dr).rem_euclid(2.0 * PI);
             let rho = head_cells * (1.0 - e) / (1.0 - e * (theta - phi).cos());
-            (rho * theta.sin(), rho * theta.cos())
+            (theta, (rho * theta.sin(), rho * theta.cos()))
         })
-        .collect()
+        .collect();
+    by_bearing.sort_by(|a, b| a.0.total_cmp(&b.0));
+    by_bearing.into_iter().map(|(_, v)| v).collect()
 }
 
 fn ray_polygon(verts: &[(f64, f64)], (dx, dy): (f64, f64)) -> f64 {
@@ -221,13 +240,13 @@ fn rel(measured: f64, expected: f64) -> f64 {
     measured / expected - 1.0
 }
 
-// Expected before running: the 16-neighbour search from one cell converges to
-// the 16-gon with vertices on the circle at the stencil bearings, of area
-// 4 sin(26.57°) + 4 sin(18.43°) = 3.0538 r², i.e. 2.80 % below π r²; the
-// largest radius shortfall is 1 - cos(13.28°) = 2.67 %, at bearings midway
-// between 0° and 26.57°.
+// Expected before running: the 32-neighbour search from one cell converges to
+// the 32-gon with vertices on the circle at the stencil bearings. Per octant
+// the bearing gaps are 18.43°, 8.13°, 7.13°, 11.31°, so the area is
+// 4 (sin 18.43° + sin 8.13° + sin 7.13° + sin 11.31°) = 3.1109 r², i.e.
+// 0.98 % below π r²; the largest radius shortfall is 1 - cos(9.22°) = 1.29 %,
+// at bearings midway between 0° and 18.43°.
 #[test]
-#[ignore = "fails: measured -2.80 % against the 2 % criterion; the 16-gon limit is -2.80 %"]
 fn circle_area_against_pi_r_squared() {
     let case = Case::uniform(1.0, 0.0);
     let (arrival, _) = case.run(T);
@@ -236,8 +255,8 @@ fn circle_area_against_pi_r_squared() {
     let circle = PI * RADIUS_CELLS * RADIUS_CELLS;
     let gon = polygon_area(&polygon(1.0, 0.0, RADIUS_CELLS));
     eprintln!(
-        "circle: burned {burned} cells, pi r^2 {circle:.1}, 16-gon {gon:.1}, \
-         rel to circle {:+.4}, rel to 16-gon {:+.4}",
+        "circle: burned {burned} cells, pi r^2 {circle:.1}, 32-gon {gon:.1}, \
+         rel to circle {:+.4}, rel to 32-gon {:+.4}",
         rel(area, circle),
         rel(area, gon)
     );
@@ -256,7 +275,7 @@ fn circle_area_against_stencil_polygon() {
     let gon = polygon_area(&polygon(1.0, 0.0, RADIUS_CELLS));
     assert!(
         rel(area, gon).abs() < 0.005,
-        "burned area {area} cells is {:+.5} relative to the 16-gon area {gon:.1}",
+        "burned area {area} cells is {:+.5} relative to the 32-gon area {gon:.1}",
         rel(area, gon)
     );
 }
@@ -282,18 +301,18 @@ fn circle_radius_over_360_bearings() {
         }
     }
     eprintln!(
-        "circle radius: max rel error vs circle {:+.4} at {}°, vs 16-gon {:+.5} at {}°",
+        "circle radius: max rel error vs circle {:+.4} at {}°, vs 32-gon {:+.5} at {}°",
         worst_circle.0, worst_circle.1, worst_gon.0, worst_gon.1
     );
     assert!(
         worst_gon.0.abs() < 0.005,
-        "radius error vs 16-gon {:+.5} at {}°",
+        "radius error vs 32-gon {:+.5} at {}°",
         worst_gon.0,
         worst_gon.1
     );
     assert!(
-        (worst_circle.0 + 0.0267).abs() < 0.002,
-        "max radius error vs circle {:+.4} at {}°, expected -0.0267",
+        (worst_circle.0 + 0.0129).abs() < 0.002,
+        "max radius error vs circle {:+.4} at {}°, expected -0.0129",
         worst_circle.0,
         worst_circle.1
     );
@@ -307,7 +326,7 @@ fn check_ellipse_lb(az_deg: f64) -> (Shape, Shape) {
     let gon = polygon_shape(lb, az_deg, RADIUS_CELLS);
     eprintln!(
         "ellipse az {az_deg}°: head {:.3} back {:.3} width {:.3} L/W {:.4} ({:+.4} vs 3); \
-         16-gon head {:.3} back {:.3} width {:.3} L/W {:.4}",
+         32-gon head {:.3} back {:.3} width {:.3} L/W {:.4}",
         shape.head,
         shape.back,
         shape.width,
@@ -330,17 +349,16 @@ fn assert_matches_polygon(az_deg: f64, shape: &Shape, gon: &Shape) {
         let tol = if name == "back" { 0.05 } else { 0.01 };
         assert!(
             rel(m, p).abs() < tol,
-            "az {az_deg}°: {name} {m:.3} cells is {:+.4} relative to the 16-gon {p:.3}",
+            "az {az_deg}°: {name} {m:.3} cells is {:+.4} relative to the 32-gon {p:.3}",
             rel(m, p)
         );
     }
 }
 
 // Expected before running: head 200 cells and back 200 / 33.97 = 5.888 cells
-// exactly, both stencil bearings; width 2 x 0.1633 x 200 = 65.3 cells from the
-// 26.57° vertex against the ellipse's 68.6, so L/W = 3.152, +5.1 % against 3.
+// exactly, both stencil bearings; width 2 x 0.1713 x 200 = 68.5 cells from the
+// 18.43° vertex against the ellipse's 68.6, so L/W = 3.005, +0.2 % against 3.
 #[test]
-#[ignore = "fails: measured L/W +5.7 % against the 5 % criterion; the 16-gon limit is +5.1 %"]
 fn ellipse_north_against_lb_3() {
     let lb = 3.0;
     let (shape, _) = check_ellipse_lb(0.0);
@@ -371,8 +389,14 @@ fn ellipse_north_against_stencil_polygon() {
     assert_matches_polygon(0.0, &shape, &gon);
 }
 
+// Expected before running, by hand from the 32-gon vertices:
+// az 30°: head on the chord between the 26.57° and 33.69° vertices, about
+// 0.966 x 200 = 193 cells (-3.4 %); width 200 x (0.1558 + 0.1657) = 64.3 cells
+// from the 0° and 45° vertices; L/W about 3.09 (+3 %).
+// az 117°: head about 200 cells (116.57° vertex is 0.43° away); width
+// 200 x (0.1623 + 0.1710) = 66.7 cells from the 90° and 135° vertices; L/W
+// about 3.09 (+3 %).
 #[test]
-#[ignore = "fails at 30°: measured L/W -5.8 % against the 5 % criterion; the 16-gon limit is -5.9 %"]
 fn ellipse_rotated_against_lb_3() {
     for az in [30.0, 117.0] {
         let (shape, _) = check_ellipse_lb(az);
@@ -449,6 +473,33 @@ fn diagonal_barrier_stops_spread() {
     assert_eq!(
         beyond, 0,
         "{beyond} cells burned beyond the barrier r + c = {LINE}"
+    );
+}
+
+#[test]
+fn main_diagonal_barrier_stops_spread() {
+    const SHIFT: usize = 100;
+    let mut case = Case::uniform(3.0, 45.0);
+    for row in 0..N - SHIFT {
+        case.burnable[row * N + row + SHIFT] = false;
+    }
+    let (arrival, _) = case.run(f32::INFINITY);
+    let diff = |i: usize| (i % N).cast_signed() - (i / N).cast_signed();
+    let shift = SHIFT.cast_signed();
+    let beyond = (0..N * N)
+        .filter(|&i| diff(i) > shift && arrival[i].is_finite())
+        .count();
+    let adjacent = (0..N * N)
+        .filter(|&i| diff(i) == shift - 1 && arrival[i].is_finite())
+        .count();
+    eprintln!(
+        "main diagonal barrier: {adjacent} cells burned on c - r = {}, {beyond} beyond",
+        shift - 1
+    );
+    assert!(adjacent > 0, "no cell burned next to the barrier");
+    assert_eq!(
+        beyond, 0,
+        "{beyond} cells burned beyond the barrier c - r = {SHIFT}"
     );
 }
 
