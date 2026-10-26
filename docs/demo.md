@@ -180,3 +180,7 @@ These items are on the roadmap and are not in the demo:
 - Boundary distance, Hausdorff distance and buffered overlap metrics.
 - Crown fire.
 - Calibration of the spread multiplier and wind perturbation.
+- Lean proofs (Phase 5a, after the hackathon). The first proofs cover the
+  metrics: Jaccard and Dice lie in [0, 1], and Dice equals 2J / (1 + J). Later
+  proofs cover the Rothermel factor algebra and the unit conversions. Each
+  theorem gets a Rust test that checks the engine against it.
