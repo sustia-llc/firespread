@@ -313,4 +313,4 @@ not need Python. `docs/oracle-differences.md` lists the known differences.
 
 ## License
 
-The project has no license yet. The team chooses one on 2026-10-27.
+MIT OR Apache-2.0, at your choice. See `LICENSE-MIT` and `LICENSE-APACHE`.

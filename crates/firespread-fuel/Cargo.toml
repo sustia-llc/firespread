@@ -3,6 +3,7 @@ name = "firespread-fuel"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "Scott and Burgan (2005) fuel models in paper and SI units, with dynamic herbaceous load transfer"
 
 [lib]

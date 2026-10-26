@@ -3,6 +3,7 @@ name = "firespread-rothermel"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 description = "Rothermel (1972) surface fire spread model as documented in Andrews (2018), SI at the API"
 
 [lib]
