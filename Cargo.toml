@@ -19,6 +19,13 @@ serde_json = "1"
 thiserror = "2"
 tiff = { version = "=0.11.3", default-features = false, features = ["deflate"] }
 
+kanal = { git = "https://github.com/fereidani/kanal", rev = "89a1a3c75d4d8cdf7d624afd1c593f11da6c0047" }
+tokio = { version = "1.54.1", default-features = false }
+tokio-rayon = "2.1.0"
+tokio-util = { version = "0.7.20", default-features = false }
+tracing = "0.1.44"
+
+firespread-ensemble = { path = "crates/firespread-ensemble" }
 firespread-fuel = { path = "crates/firespread-fuel" }
 firespread-grid = { path = "crates/firespread-grid" }
 firespread-rothermel = { path = "crates/firespread-rothermel" }

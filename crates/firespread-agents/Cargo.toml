@@ -3,10 +3,26 @@ name = "firespread-agents"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Agent coalitions that steer and interpret spread runs"
+description = "The forecast runtime: loaders, agents as tokio tasks, an in-process bus and a bounded rayon executor"
 
 [lib]
 doctest = false
 
 [dependencies]
+firespread-ensemble.workspace = true
+firespread-grid.workspace = true
+firespread-rothermel.workspace = true
+firespread-spread.workspace = true
+kanal.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tokio-rayon.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
+tracing.workspace = true
+
+[dev-dependencies]
+anyhow = "1"
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }

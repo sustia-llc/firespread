@@ -1,16 +1,23 @@
 #![forbid(unsafe_code)]
-//! Agent coalitions that steer and interpret spread runs.
+//! The forecast runtime: a [`Forecaster`] owns a root cancellation token, a
+//! task tracker, an in-process [`Bus`] and a bounded rayon [`Executor`];
+//! loaders read the static rasters once; the Weather, Forecast and Publisher
+//! agents run as tokio tasks that load the window's weather, run the
+//! ensemble member by member on the executor, and write the burn-probability
+//! COGs and manifest of the run.
 
-/// Errors raised by agent coordination.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum AgentError {
-    /// No agent carries the requested name.
-    #[error("unknown agent `{name}`")]
-    UnknownAgent { name: String },
-    /// A message could not be delivered to an agent.
-    #[error("agent `{name}` did not accept message `{message}`")]
-    Undeliverable { name: String, message: String },
-}
+mod agents;
+mod bus;
+mod error;
+mod executor;
+mod forecast;
+mod forecaster;
+mod loaders;
 
-pub type Result<T> = core::result::Result<T, AgentError>;
+pub use agents::{Event, FORECAST, INBOX, PUBLISHER, Published, WEATHER};
+pub use bus::{Bus, Delivery, KanalBus};
+pub use error::{AgentError, Result};
+pub use executor::{Executor, panic_message};
+pub use forecast::{EnsembleOutcome, EnsembleSpec, MemberOutcome, MemberProgress, run_members};
+pub use forecaster::{ForecastConfig, Forecaster, ShutdownReport, Source};
+pub use loaders::{GridInputs, load_grid_inputs};
