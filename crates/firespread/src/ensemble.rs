@@ -11,7 +11,7 @@ use firespread_ensemble::{HourlyConfig, HourlyPerturbation};
 use firespread_grid::{ForecastWindow, Manifest};
 use serde::{Deserialize, Serialize};
 
-use crate::settings::{RunSettings, load_window};
+use crate::settings::{NightMoistureSettings, RunSettings, Scenario, load_window};
 use crate::timefmt::{feds_label, parse_hour};
 
 /// Longest wait for [`Forecaster::shutdown`] to drain the agents.
@@ -71,6 +71,47 @@ pub struct RunConfigFile {
     /// Cells the barrier codes made non-burnable.
     pub road_barrier_cells: usize,
     pub horizons_h: Vec<u32>,
+    /// The night moisture setting; absent when off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub night_moisture: Option<NightMoistureRecord>,
+}
+
+/// The night moisture setting of a run: its scenario, the dead 1-h, 10-h
+/// and 100-h moisture it resolved to (percent), and its period and UTC
+/// offset.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NightMoistureRecord {
+    pub scenario: Scenario,
+    pub dead_pct: [f64; 3],
+    pub start_local: String,
+    pub end_local: String,
+    pub utc_offset_h: i32,
+}
+
+impl NightMoistureRecord {
+    /// The record of `settings`.
+    pub fn new(settings: &NightMoistureSettings) -> Result<Self> {
+        Ok(Self {
+            scenario: settings.scenario,
+            dead_pct: settings.to_night()?.dead_pct,
+            start_local: settings.start_local.clone(),
+            end_local: settings.end_local.clone(),
+            utc_offset_h: settings.utc_offset_h,
+        })
+    }
+}
+
+/// The hourly configuration of `settings`: [`HourlyConfig::default`] with
+/// its night moisture.
+pub fn hourly_config(settings: &RunSettings) -> Result<HourlyConfig> {
+    Ok(HourlyConfig {
+        night_moisture: settings
+            .night_moisture
+            .as_ref()
+            .map(NightMoistureSettings::to_night)
+            .transpose()?,
+        ..HourlyConfig::default()
+    })
 }
 
 /// What a finished run reports.
@@ -86,7 +127,8 @@ pub struct RunSummary {
 }
 
 /// Runs window `args.window` of `args.data` through [`forecast`] on
-/// [`Source::Files`] with the settings' road barrier codes.
+/// [`Source::Files`] with the settings' road barrier codes and the
+/// [`hourly_config`] of the settings.
 pub async fn run(args: &EnsembleArgs, stop: impl Future<Output = ()>) -> Result<RunSummary> {
     let window = load_window(&args.data, &args.window)?;
     let start_mask = format!(
@@ -102,7 +144,7 @@ pub async fn run(args: &EnsembleArgs, stop: impl Future<Output = ()>) -> Result<
             target_t: window.target_t,
             fireids: window.fireids,
         },
-        hourly: HourlyConfig::default(),
+        hourly: hourly_config(&args.settings)?,
         ensemble: EnsembleSpec {
             seed: args.seed,
             members: args.members,
@@ -212,6 +254,11 @@ pub async fn forecast(
             road_barrier_codes: settings.road_barrier_codes.clone(),
             road_barrier_cells,
             horizons_h: settings.horizons_h.clone(),
+            night_moisture: settings
+                .night_moisture
+                .as_ref()
+                .map(NightMoistureRecord::new)
+                .transpose()?,
         },
     )?;
     Ok(RunSummary {

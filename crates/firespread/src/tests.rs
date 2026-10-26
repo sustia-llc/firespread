@@ -14,9 +14,11 @@ use firespread_grid::{
 use firespread_metrics::Mask;
 use serde_json::Value;
 
-use crate::ensemble::{MEMBERS_FILE, MemberArea, MembersFile, forecast, write_json};
+use crate::ensemble::{
+    MEMBERS_FILE, MemberArea, MembersFile, RUN_CONFIG_FILE, forecast, hourly_config, write_json,
+};
 use crate::score::{Observations, ScoreOptions, score_run};
-use crate::settings::RunSettings;
+use crate::settings::{NightMoistureSettings, RunSettings, Scenario};
 use crate::timefmt::parse_hour;
 
 const DX: f64 = 30.0;
@@ -401,4 +403,77 @@ async fn same_seed_gives_byte_identical_scorecards() {
     );
     let _ = std::fs::remove_dir_all(a_dir);
     let _ = std::fs::remove_dir_all(b_dir);
+}
+
+/// Runs the synthetic window with UTC labels 02Z and 03Z (local 20:00 and
+/// 21:00 at offset -6) under `settings`, and returns `run_config.json` and
+/// `members.json`.
+async fn run_with(runs_dir: &Path, settings: &RunSettings) -> (Value, Value) {
+    let (grid, mut weather, _) = synthetic();
+    weather.hours_utc = vec![
+        "2022-05-10T02:00:00Z".to_string(),
+        "2022-05-10T03:00:00Z".to_string(),
+    ];
+    let config = ForecastConfig {
+        run_id: "w1-seed7-m24".to_string(),
+        runs_dir: runs_dir.to_path_buf(),
+        window: window(),
+        hourly: hourly_config(settings).unwrap(),
+        ensemble: EnsembleSpec {
+            seed: 7,
+            members: 24,
+            horizons_h: vec![1, 2],
+            perturbation: HourlyPerturbation::default(),
+        },
+        threads: 3,
+    };
+    let source = Source::Memory {
+        grid: Box::new(grid),
+        weather,
+    };
+    let summary = forecast(config, source, settings, std::future::pending())
+        .await
+        .unwrap();
+    let read =
+        |file| serde_json::from_slice(&std::fs::read(summary.run_dir.join(file)).unwrap()).unwrap();
+    (read(RUN_CONFIG_FILE), read(MEMBERS_FILE))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn night_moisture_reaches_the_run_and_its_config() {
+    let (off_dir, on_dir) = (scratch("night-off"), scratch("night-on"));
+    let off = RunSettings::default();
+    let on = RunSettings {
+        night_moisture: Some(NightMoistureSettings {
+            scenario: Scenario::D2,
+            custom_pct: None,
+            start_local: "20:00".to_string(),
+            end_local: "07:59".to_string(),
+            utc_offset_h: -6,
+        }),
+        ..RunSettings::default()
+    };
+    let (config_off, members_off) = run_with(&off_dir, &off).await;
+    let (config_on, members_on) = run_with(&on_dir, &on).await;
+    assert!(
+        config_off.get("night_moisture").is_none(),
+        "off run_config.json holds night_moisture: {config_off}"
+    );
+    let want = serde_json::json!({
+        "scenario": "D2",
+        "dead_pct": [6.0, 7.0, 8.0],
+        "start_local": "20:00",
+        "end_local": "07:59",
+        "utc_offset_h": -6,
+    });
+    assert_eq!(
+        config_on["night_moisture"], want,
+        "on run_config.json: {config_on}"
+    );
+    assert_ne!(
+        members_off["members"], members_on["members"],
+        "night moisture left every member's burned cells unchanged"
+    );
+    let _ = std::fs::remove_dir_all(off_dir);
+    let _ = std::fs::remove_dir_all(on_dir);
 }

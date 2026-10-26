@@ -81,6 +81,19 @@ pub enum EnsembleError {
     /// A spread multiplier is negative or not finite.
     #[error("spread multiplier of {model} is {value}, expected a finite value >= 0")]
     InvalidSpreadMultiplier { model: &'static str, value: f64 },
+    /// A field of the night moisture setting is out of range.
+    #[error("night moisture {field} is {value}, expected {bound}")]
+    InvalidNightMoisture {
+        field: &'static str,
+        bound: &'static str,
+        value: f64,
+    },
+    /// An hour label is not `YYYY-MM-DDTHH:MM:SSZ`.
+    #[error("hour {index} label {label:?} is not YYYY-MM-DDTHH:MM:SSZ")]
+    InvalidHourLabel { index: usize, label: String },
+    /// The weather does not hold one UTC label per hour.
+    #[error("weather holds {labels} hour labels for {hours} hours")]
+    HourLabels { hours: usize, labels: usize },
     /// The weather index could not be read or parsed.
     #[error("weather index {path}: {reason}")]
     WeatherIndex {

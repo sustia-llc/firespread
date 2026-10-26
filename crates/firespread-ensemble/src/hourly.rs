@@ -1,7 +1,7 @@
 //! Ensembles over a window of hourly weather: per-cell wind from 10 m wind
 //! and the wind adjustment factor, per-cell dead fuel moisture from the
-//! hour's temperature, humidity and cloud cover, and spread advanced hour by
-//! hour.
+//! hour's temperature, humidity and cloud cover or, in night hours, from a
+//! fixed night setting, and spread advanced hour by hour.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -20,6 +20,7 @@ use rayon::prelude::*;
 use crate::fbfm40::BURNABLE_FBFM40;
 use crate::inputs::{Inputs, Layers, NON_BURNABLE};
 use crate::moisture::{DeadFuelMoisture, mc1_fraction, mc10_fraction};
+use crate::night::NightMoisture;
 use crate::waf::{Canopy, WafRule};
 use crate::weather::{HourFields, WindowWeather};
 use crate::{EnsembleError, Result};
@@ -43,13 +44,16 @@ pub struct HourlyConfig {
     pub moisture: DeadFuelMoisture,
     /// Factor on the head rate of spread per entry of [`BURNABLE_FBFM40`].
     pub spread_multiplier: [f64; N_MODELS],
+    /// Dead fuel moisture of the night hours; `None` gives every hour the
+    /// moisture of its weather.
+    pub night_moisture: Option<NightMoisture>,
 }
 
 impl Default for HourlyConfig {
     /// Live herbaceous 30 % and live woody 60 % (the Scott and Burgan 2005
     /// L1 scenario of the Phase 2 gate), [`WindLimit::None`], the default
-    /// [`WafRule`] and [`DeadFuelMoisture`], and spread multiplier 1 for every
-    /// fuel model.
+    /// [`WafRule`] and [`DeadFuelMoisture`], spread multiplier 1 for every
+    /// fuel model, and no night moisture.
     fn default() -> Self {
         Self {
             live_herb: 0.30,
@@ -58,6 +62,7 @@ impl Default for HourlyConfig {
             waf_rule: WafRule::default(),
             moisture: DeadFuelMoisture::default(),
             spread_multiplier: [1.0; N_MODELS],
+            night_moisture: None,
         }
     }
 }
@@ -88,6 +93,10 @@ pub struct HourlyInputs {
     ignition: Vec<(usize, usize)>,
     weather: WindowWeather,
     spread_multiplier: [f64; N_MODELS],
+    /// Dead 1-h, 10-h and 100-h moisture of a night hour, fraction.
+    night_dead: [f64; 3],
+    /// Whether each weather hour is a night hour.
+    night: Vec<bool>,
 }
 
 fn cell_error(index: usize, e: EnsembleError) -> EnsembleError {
@@ -110,10 +119,16 @@ impl HourlyInputs {
     /// Builds the inputs from in-memory layers and weather. A cell of
     /// `layers.base.ignited` is in the start mask when it holds 1. The WAF of
     /// a burnable cell is `config.waf_rule` at its fuel model's bed depth
-    /// and its canopy.
+    /// and its canopy. With `config.night_moisture` set, each hour is
+    /// classified by [`NightMoisture::is_night`] of its label in
+    /// `weather.hours_utc`; without it, every hour is a day hour and the
+    /// labels are not read.
     ///
     /// # Errors
     /// [`EnsembleError::InvalidSpreadMultiplier`], the errors of
+    /// [`NightMoisture::validated`] and [`NightMoisture::is_night`],
+    /// [`EnsembleError::HourLabels`] when the night moisture is set and the
+    /// weather does not hold one label per hour, the errors of
     /// [`Inputs::from_layers`], [`EnsembleError::LayerLength`] when a canopy
     /// or weather layer does not hold one value per cell,
     /// [`EnsembleError::InvalidCell`] for an invalid canopy value or a
@@ -129,6 +144,25 @@ impl HourlyInputs {
                 return Err(EnsembleError::InvalidSpreadMultiplier { model, value });
             }
         }
+        let (night_dead, night) = match config.night_moisture {
+            None => ([0.0; 3], vec![false; weather.hours.len()]),
+            Some(setting) => {
+                let setting = setting.validated()?;
+                if weather.hours_utc.len() != weather.hours.len() {
+                    return Err(EnsembleError::HourLabels {
+                        hours: weather.hours.len(),
+                        labels: weather.hours_utc.len(),
+                    });
+                }
+                let night = weather
+                    .hours_utc
+                    .iter()
+                    .enumerate()
+                    .map(|(k, label)| setting.is_night(k, label))
+                    .collect::<Result<Vec<_>>>()?;
+                (setting.dead_pct.map(units::percent_to_fraction), night)
+            }
+        };
         let reference = Moistures {
             dead_1h: 0.03,
             dead_10h: 0.04,
@@ -211,6 +245,8 @@ impl HourlyInputs {
             ignition,
             weather,
             spread_multiplier: config.spread_multiplier,
+            night_dead,
+            night,
         })
     }
 
@@ -300,15 +336,61 @@ impl HourlyInputs {
         &self.ignition
     }
 
+    /// Whether each weather hour is a night hour of the run's night
+    /// moisture; all `false` when it has none.
+    #[must_use]
+    pub fn night_hours(&self) -> &[bool] {
+        &self.night
+    }
+
+    /// The dead fuel moisture, fraction, of cell `cell` in hour `hour` for a
+    /// member with draws `draw`. In a day hour: 1-h and 10-h moisture
+    /// [`mc1_fraction`] and [`mc10_fraction`] of the hour's EMCPRM, each
+    /// times `draw.dead_moisture_factor`, and 100-h moisture the gridMET
+    /// 100-h moisture. In a night hour: the night moisture's 1-h and 10-h
+    /// values times `draw.dead_moisture_factor`, and its 100-h value.
+    ///
+    /// # Panics
+    /// When `hour` is not below the number of weather hours or `cell` is not
+    /// below the number of cells.
+    #[must_use]
+    pub fn dead_moistures(&self, hour: usize, draw: &MemberDraw, cell: usize) -> DeadMoistures {
+        self.dead_at(&self.weather.hours[hour], self.night[hour], draw, cell)
+    }
+
+    fn dead_at(
+        &self,
+        hour: &HourFields,
+        night: bool,
+        draw: &MemberDraw,
+        cell: usize,
+    ) -> DeadMoistures {
+        let factor = draw.dead_moisture_factor;
+        if night {
+            let [d1, d10, d100] = self.night_dead;
+            DeadMoistures {
+                dead_1h: d1 * factor,
+                dead_10h: d10 * factor,
+                dead_100h: d100,
+            }
+        } else {
+            let emc = f64::from(hour.emcprm_pct[cell]);
+            DeadMoistures {
+                dead_1h: mc1_fraction(emc) * factor,
+                dead_10h: mc10_fraction(emc) * factor,
+                dead_100h: units::percent_to_fraction(f64::from(self.weather.fm100_pct[cell])),
+            }
+        }
+    }
+
     /// The fields of cell `cell` in hour `hour` for a member with draws
     /// `draw`, all 0 at a non-burnable cell. At a burnable cell of fuel
     /// model `m`: midflame wind `u20ft · WAF · draw.wind_speed_factor`
-    /// toward `azimuth + draw.wind_direction_offset_rad`; dead 1-h and 10-h
-    /// moisture [`mc1_fraction`] and [`mc10_fraction`] of the hour's EMCPRM,
-    /// each times `draw.dead_moisture_factor`; dead 100-h moisture the
-    /// gridMET 100-h moisture; the head rate of [`MoistureModel::at`] then
-    /// `eval` times the spread multiplier of `m`, with the eccentricity and
-    /// head azimuth of the same evaluation, each cast to `f32`.
+    /// toward `azimuth + draw.wind_direction_offset_rad`; dead moisture
+    /// [`HourlyInputs::dead_moistures`]; the head rate of
+    /// [`MoistureModel::at`] then `eval` times the spread multiplier of `m`,
+    /// with the eccentricity and head azimuth of the same evaluation, each
+    /// cast to `f32`.
     ///
     /// # Errors
     /// The Rothermel errors of the evaluation.
@@ -320,6 +402,7 @@ impl HourlyInputs {
         HourProvider {
             inputs: self,
             hour: &self.weather.hours[hour],
+            night: self.night[hour],
             draw,
         }
         .eval(cell)
@@ -445,6 +528,7 @@ impl HourlyPerturbation {
 struct HourProvider<'a> {
     inputs: &'a HourlyInputs,
     hour: &'a HourFields,
+    night: bool,
     draw: &'a MemberDraw,
 }
 
@@ -456,13 +540,7 @@ impl HourProvider<'_> {
             return Ok(CellFields::default());
         }
         let m = usize::from(m);
-        let emc = f64::from(self.hour.emcprm_pct[cell]);
-        let factor = self.draw.dead_moisture_factor;
-        let model = h.models[m].at(&DeadMoistures {
-            dead_1h: mc1_fraction(emc) * factor,
-            dead_10h: mc10_fraction(emc) * factor,
-            dead_100h: units::percent_to_fraction(f64::from(h.weather.fm100_pct[cell])),
-        })?;
+        let model = h.models[m].at(&h.dead_at(self.hour, self.night, self.draw, cell))?;
         let out = model.eval(&DirectionalEnvironment {
             midflame_wind_m_s: f64::from(self.hour.u20ft_m_s[cell])
                 * f64::from(h.waf[cell])
@@ -541,7 +619,12 @@ pub fn run_hourly_member(
     }
     for (k, hour) in inputs.weather.hours[..hours].iter().enumerate() {
         let t0 = k as f32 * S_PER_HOUR;
-        let mut provider = HourProvider { inputs, hour, draw };
+        let mut provider = HourProvider {
+            inputs,
+            hour,
+            night: inputs.night[k],
+            draw,
+        };
         let s = workspace.simulate_window_with(
             grid,
             inputs.inputs.burnable(),

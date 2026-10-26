@@ -13,6 +13,7 @@ mod hourly;
 mod inputs;
 mod member;
 pub mod moisture;
+mod night;
 pub mod waf;
 mod weather;
 
@@ -27,5 +28,6 @@ pub use hourly::{
 pub use inputs::{Inputs, Layers, ROAD_BARRIER_WATER_CODE, apply_road_barriers};
 pub use member::{MemberBuffers, MemberFields, MemberParams, run_member};
 pub use moisture::{DeadFuelMoisture, SkyEdges};
+pub use night::{MINUTES_PER_DAY, NightMoisture, NightScenario};
 pub use waf::{Canopy, WafRule};
 pub use weather::{HourFields, RawHour, WindowWeather};
