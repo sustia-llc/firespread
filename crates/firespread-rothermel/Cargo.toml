@@ -13,5 +13,6 @@ firespread-fuel.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+anyhow = "1"
 serde.workspace = true
 serde_json.workspace = true

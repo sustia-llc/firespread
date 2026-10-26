@@ -2,9 +2,9 @@
 
 Reads the Scott and Burgan 40 table embedded in firespread-fuel, calls
 ``firebench.ros_models.surface_for_vegetation.Rothermel_SFIRE.rothermel`` for
-GR1, GR4, SH2, TU1 and TL3 as single dead 1-h classes over a wind by slope
-grid, and writes the cases whose rate of spread the oracle did not clamp to
-its 6.0 m/s ceiling.
+all 40 models as single dead 1-h classes over the dead moisture scenarios D1,
+D2 and D3 and a wind by slope grid, and writes the cases whose rate of spread
+the oracle did not clamp to its 6.0 m/s ceiling.
 """
 
 from __future__ import annotations
@@ -30,10 +30,11 @@ DEFAULT_OUT = (
     / "firebench_single_class.json"
 )
 
-MODELS = ["GR1", "GR4", "SH2", "TU1", "TL3"]
 WIND_M_S = [0.0, 2.0, 5.0, 10.0, 15.0]
 SLOPE_PERCENT = [0.0, 10.0, 30.0, 60.0, 100.0]
-FMC_PERCENT = 8.0
+# Scott and Burgan 2005 RMRS-GTR-153 Table 3 (p. 8), dead 1-h moisture in percent.
+# D4 (12 %) is omitted: it equals TU4's extinction moisture.
+MOISTURE_SCENARIOS = {"D1": 3.0, "D2": 6.0, "D3": 9.0}
 
 KG_PER_SHORT_TON = 907.18474
 M2_PER_ACRE = 4046.8564224
@@ -59,46 +60,47 @@ def load_models(csv_path: Path) -> dict[str, dict[str, str]]:
 
 def build_cases(rows: dict[str, dict[str, str]]) -> list[dict[str, float | str]]:
     cases: list[dict[str, float | str]] = []
-    for code in MODELS:
-        row = rows[code]
+    for code, row in rows.items():
         fgi = t_ac_to_kg_m2(float(row["fuel_load_1h"]))
         depth_m = float(row["fuel_bed_depth"]) * M_PER_FT
         savr = float(row["sav_ratio_dead_1h"])
         # The oracle divides the moisture fraction by fuelmce as given
         # (rtemp1 = fuelmc_g / fuelmce), so fuelmce is passed as a fraction.
         fuelmce = float(row["dead_fuel_extinction_moisture"]) / 100.0
-        for wind in WIND_M_S:
-            for slope_pct in SLOPE_PERCENT:
-                slope_deg = math.degrees(math.atan(slope_pct / 100.0))
-                ros = Rothermel_SFIRE.rothermel(
-                    fgi=fgi,
-                    fueldepthm=depth_m,
-                    fueldens=FUELDENS_LB_FT3,
-                    savr=savr,
-                    fuelmce=fuelmce,
-                    st=ST,
-                    se=SE,
-                    ichap=ICHAP,
-                    wind=wind,
-                    slope=slope_deg,
-                    fmc=FMC_PERCENT,
-                )
-                if ros == ORACLE_CLAMP_M_S:
-                    continue
-                cases.append(
-                    {
-                        "model": code,
-                        "fgi_kg_m2": fgi,
-                        "fueldepth_m": depth_m,
-                        "savr_per_ft": savr,
-                        "fuelmce_passed": fuelmce,
-                        "fmc_percent": FMC_PERCENT,
-                        "wind_m_s": wind,
-                        "slope_percent": slope_pct,
-                        "slope_deg": slope_deg,
-                        "ros_m_s": float(ros),
-                    }
-                )
+        for scenario, fmc in MOISTURE_SCENARIOS.items():
+            for wind in WIND_M_S:
+                for slope_pct in SLOPE_PERCENT:
+                    slope_deg = math.degrees(math.atan(slope_pct / 100.0))
+                    ros = Rothermel_SFIRE.rothermel(
+                        fgi=fgi,
+                        fueldepthm=depth_m,
+                        fueldens=FUELDENS_LB_FT3,
+                        savr=savr,
+                        fuelmce=fuelmce,
+                        st=ST,
+                        se=SE,
+                        ichap=ICHAP,
+                        wind=wind,
+                        slope=slope_deg,
+                        fmc=fmc,
+                    )
+                    if ros == ORACLE_CLAMP_M_S:
+                        continue
+                    cases.append(
+                        {
+                            "model": code,
+                            "moisture_scenario": scenario,
+                            "fgi_kg_m2": fgi,
+                            "fueldepth_m": depth_m,
+                            "savr_per_ft": savr,
+                            "fuelmce_passed": fuelmce,
+                            "fmc_percent": fmc,
+                            "wind_m_s": wind,
+                            "slope_percent": slope_pct,
+                            "slope_deg": slope_deg,
+                            "ros_m_s": float(ros),
+                        }
+                    )
     return cases
 
 
@@ -122,7 +124,12 @@ def main(argv: list[str]) -> int:
             "net_load": "fuelload / (1 + st)",
             "fuelmce_convention": "fraction: the oracle computes fuelmc_g / fuelmce with fuelmc_g = fmc / 100",
             "clamp_m_s": ORACLE_CLAMP_M_S,
-            "skipped_clamped_cases": len(MODELS) * len(WIND_M_S) * len(SLOPE_PERCENT) - len(cases),
+            "skipped_clamped_cases": len(rows)
+            * len(MOISTURE_SCENARIOS)
+            * len(WIND_M_S)
+            * len(SLOPE_PERCENT)
+            - len(cases),
+            "moisture_scenarios_percent": MOISTURE_SCENARIOS,
         },
         "cases": cases,
     }
