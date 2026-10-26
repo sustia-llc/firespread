@@ -10,9 +10,9 @@ Set `FIRESPREAD_DATA` to use another directory. Install with
 
 Unions the two WFIGS final perimeters in `data/wfigs/`. Prints their bounding
 box in EPSG:4326 and in EPSG:5070. Writes `data/extent.json` with the master
-grid. The grid is a 2334 by 2334 window of 30 m EPSG:5070 cells. The window
-is centred on the union's centroid, with its corners snapped to multiples of
-30 m. `origin_x` and `origin_y` give the upper-left corner. `bounds_5070` and
+grid. The grid is a 2400 by 2400 window of 30 m EPSG:5070 cells. The window
+is centred on the union's bounding box, with its corners snapped to multiples
+of 30 m. `origin_x` and `origin_y` give the upper-left corner. `bounds_5070` and
 the grid's `bbox_4326` describe the same window. `covers_wfigs_union` says
 whether the window contains the WFIGS union's bounding box.
 
