@@ -21,7 +21,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, bail};
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, Response, StatusCode, header};
+use axum::middleware::map_response;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
@@ -196,6 +197,7 @@ pub struct ServeDirs {
 /// alert, GET those after `?after=<seq>`, DELETE to reset) and `dirs.ui` for
 /// every other path. Every directory route is a `ServeDir`, which answers GET
 /// and HEAD and returns 404 for a missing file or a path with a `..` segment.
+/// Every response carries `Cache-Control: no-cache`.
 pub fn router(dirs: &ServeDirs) -> Router {
     let log: SharedLog = Arc::default();
     Router::new()
@@ -208,6 +210,14 @@ pub fn router(dirs: &ServeDirs) -> Router {
         .nest_service("/basemap", ServeDir::new(&dirs.basemap))
         .nest_service("/diagrams", ServeDir::new(&dirs.diagrams))
         .fallback_service(ServeDir::new(&dirs.ui))
+        .layer(map_response(no_cache))
+}
+
+/// Sets `Cache-Control: no-cache` on `res`, replacing any existing value.
+async fn no_cache<B>(mut res: Response<B>) -> Response<B> {
+    res.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    res
 }
 
 /// Parsed command-line arguments.

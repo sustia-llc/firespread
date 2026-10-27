@@ -35,6 +35,7 @@ The first release, planned as `v0.1.0` after the hackathon review.
   confusion map, the observed perimeter, hillshade, street basemap, the
   scorecard chart, the WFIGS table, the burned area chart, help texts and
   links to the diagrams.
+- `serve` sends `Cache-Control: no-cache` on every response.
 - Python data preparation for the Hermits Peak and Calf Canyon case.
 - The FireBench standard-format bundle of the case, and its check against
   the scorecards.

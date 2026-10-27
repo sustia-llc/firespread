@@ -1,7 +1,8 @@
 #![cfg(feature = "serve")]
 //! The `serve` example's router: GET of a run or diagrams file returns its
-//! bytes, a missing diagrams file returns 404, and a `..` path outside a mount
-//! returns 404.
+//! bytes, a missing diagrams file returns 404, a `..` path outside a mount
+//! returns 404, and ui, run, basemap and diagrams files carry
+//! `Cache-Control: no-cache`.
 
 #[path = "../examples/serve.rs"]
 #[allow(dead_code)]
@@ -68,6 +69,7 @@ impl Drop for Tree {
 struct Response {
     status: u16,
     content_type: Option<String>,
+    cache_control: Option<String>,
     body: Vec<u8>,
 }
 
@@ -110,11 +112,13 @@ async fn get(addr: SocketAddr, target: &str) -> Response {
     let status_line = lines.next().unwrap();
     let status: u16 = status_line.split(' ').nth(1).unwrap().parse().unwrap();
     let mut content_type = None;
+    let mut cache_control = None;
     let mut content_length = None;
     for line in lines {
         let (name, value) = line.split_once(':').unwrap();
         match name.to_ascii_lowercase().as_str() {
             "content-type" => content_type = Some(value.trim().to_owned()),
+            "cache-control" => cache_control = Some(value.trim().to_owned()),
             "content-length" => content_length = Some(value.trim().parse::<usize>().unwrap()),
             "transfer-encoding" => panic!("unexpected transfer-encoding `{value}` for {target}"),
             _ => {}
@@ -126,6 +130,7 @@ async fn get(addr: SocketAddr, target: &str) -> Response {
     Response {
         status,
         content_type,
+        cache_control,
         body,
     }
 }
@@ -161,6 +166,31 @@ async fn ui_index_is_served_at_root() {
     let r = get(addr, "/").await;
     assert_eq!(r.status, 200, "GET / status");
     assert_eq!(r.body, b"<!doctype html>");
+}
+
+#[tokio::test]
+async fn files_are_served_with_no_cache() {
+    let tree = Tree::new("no-cache");
+    std::fs::write(tree.root.join("diagrams/d1.png"), b"\x89PNG").unwrap();
+    std::fs::write(tree.root.join("basemap/style.json"), b"{}").unwrap();
+    let addr = spawn(&tree.dirs()).await;
+    for target in [
+        "/",
+        "/index.html",
+        "/run/manifest.json",
+        "/run/burn_probability_h1.tif",
+        "/basemap/style.json",
+        "/diagrams/d1.png",
+    ] {
+        let r = get(addr, target).await;
+        assert_eq!(r.status, 200, "GET {target} status");
+        assert_eq!(
+            r.cache_control.as_deref(),
+            Some("no-cache"),
+            "GET {target} cache-control was {:?}",
+            r.cache_control
+        );
+    }
 }
 
 #[tokio::test]
