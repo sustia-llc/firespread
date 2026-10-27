@@ -204,9 +204,16 @@
     });
   }
 
+  // GeoRasterLayer keeps its tile cache on the prototype, keyed by tile
+  // position and resolution only. Gives `layer` a cache of its own.
+  function ownCache(layer) {
+    layer.cache = {};
+    return layer;
+  }
+
   function probabilityLayer(georaster) {
     var nodata = georaster.noDataValue;
-    return new GeoRasterLayer({
+    return ownCache(new GeoRasterLayer({
       georaster: georaster,
       opacity: OVERLAY_OPACITY,
       resolution: 128,
@@ -215,12 +222,12 @@
         if (p === nodata || !(p > 0)) return null;
         return rampColor(p);
       },
-    });
+    }));
   }
 
   function hillshadeLayer(georaster) {
     var nodata = georaster.noDataValue;
-    return new GeoRasterLayer({
+    return ownCache(new GeoRasterLayer({
       georaster: georaster,
       opacity: 1,
       resolution: 256,
@@ -229,7 +236,7 @@
         if (v === nodata || v === null || isNaN(v)) return null;
         return "rgb(" + v + "," + v + "," + v + ")";
       },
-    });
+    }));
   }
 
   function gridBounds(grid) {
@@ -389,12 +396,12 @@
         return faded.indexOf(v) >= 0 ? fade(colors[v]) : colors[v];
       };
     }
-    confusionRaster = new GeoRasterLayer({
+    confusionRaster = ownCache(new GeoRasterLayer({
       georaster: g,
       opacity: 0,
       resolution: 128,
       pixelValuesToColorFn: colorFn(),
-    });
+    }));
     confusionRaster.addTo(map);
     metricEl.addEventListener("change", function () {
       confusionRaster.updateColors(colorFn());
