@@ -28,7 +28,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--server", default="http://127.0.0.1:8080")
     p.add_argument("--mesh", required=True)
-    p.add_argument("--target", help="lat,lon; defaults to the mesh scenario target")
+    p.add_argument("--target", help="lat,lon or a name in scenario.targets; defaults to the mesh scenario target")
     p.add_argument("--speed", type=float, default=1.0, help="time multiplier, 2 runs twice as fast")
     p.add_argument("--duration", type=float, default=120.0, help="scenario seconds")
     p.add_argument("--interval", type=float, default=4.0, help="seconds between a node's alerts")
@@ -61,7 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     mesh = load_mesh(args.mesh)
     nodes = mesh_nodes(mesh)
     scenario = mesh.get("scenario", {})
-    if args.target:
+    named = scenario.get("targets", {})
+    if args.target in named:
+        target = tuple(named[args.target])
+    elif args.target:
         lat, lon = (float(x) for x in args.target.split(","))
         target = (lat, lon)
     else:

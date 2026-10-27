@@ -100,6 +100,10 @@ White Rock. About two minutes in all. `--speed 2` halves it; lower the
 dashboard's alert window by the same factor so the cloud ages out before
 the smoke appears.
 
+`--target nnw` uses the named target in `scenario.targets`, north-northwest
+of the townsite. The `fuller-lodge-nnw` camera sees it first, then White
+Rock and Bandelier.
+
 ## 5. Tests
 
 ```

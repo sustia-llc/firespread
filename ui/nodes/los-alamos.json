@@ -7,11 +7,13 @@
     {"id": "fuller-lodge", "name": "Los Alamos townsite", "lat": 35.8818, "lon": -106.3036, "heading_deg": 240, "fov_deg": 80},
     {"id": "pajarito-mtn", "name": "Pajarito Mountain", "lat": 35.8870, "lon": -106.3940, "heading_deg": 160, "fov_deg": 90},
     {"id": "white-rock", "name": "White Rock Overlook", "lat": 35.8247, "lon": -106.1977, "heading_deg": 285, "fov_deg": 80},
-    {"id": "bandelier", "name": "Bandelier, Frijoles Canyon", "lat": 35.7787, "lon": -106.2706, "heading_deg": 320, "fov_deg": 80}
+    {"id": "bandelier", "name": "Bandelier, Frijoles Canyon", "lat": 35.7787, "lon": -106.2706, "heading_deg": 320, "fov_deg": 80},
+    {"id": "fuller-lodge-nnw", "name": "Los Alamos townsite, NNW", "lat": 35.8818, "lon": -106.3036, "heading_deg": 337.5, "fov_deg": 80}
   ],
   "scenario": {
     "name": "Smoke on the Pajarito Plateau",
     "target": [35.8300, -106.3600],
+    "targets": {"nnw": [35.9300, -106.3300]},
     "false_positive": {"node": "white-rock", "bearing_deg": 250, "label": "smoke", "note": "a cloud bank over the Rio Grande"}
   }
 }
