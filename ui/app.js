@@ -230,6 +230,7 @@
     return ownCache(new GeoRasterLayer({
       georaster: georaster,
       opacity: 1,
+      zIndex: 0,
       resolution: 256,
       pixelValuesToColorFn: function (values) {
         var v = values[0];
@@ -275,6 +276,7 @@
     await archive.getHeader();
     var layer = protomapsL.leafletLayer({ url: archive, flavor: "light", lang: "en" });
     layer.setOpacity(PMTILES_OPACITY);
+    layer.setZIndex(2);
     layer.addTo(map);
     layers.addOverlay(layer, layerName("Vector basemap", "layerVector"));
   }
@@ -307,7 +309,6 @@
       var g = await loadGeoraster("basemap/hillshade.tif");
       var layer = hillshadeLayer(g);
       layer.addTo(map);
-      layer.bringToBack();
       layers.addOverlay(layer, layerName("Hillshade", "layerHillshade"));
     } catch (e) {
       console.info("[firespread] hillshade skipped: " + e.message);
@@ -748,7 +749,9 @@
     } else {
       map.setView([35.85, -105.4], 10);
     }
-    var layers = L.control.layers(null, null, { collapsed: false }).addTo(map);
+    // Tile layers carry fixed z-indexes: hillshade 0, burn probability and
+    // confusion 1, vector basemap 2.
+    var layers = L.control.layers(null, null, { collapsed: false, autoZIndex: false }).addTo(map);
     await addHillshade(map, layers);
     try {
       await addPmtiles(map, layers);
