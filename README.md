@@ -181,8 +181,13 @@ highest buffered Dice of the three entrants.
 ## Requirements
 
 - Rust 1.99.1. The file `rust-toolchain.toml` selects it.
-- Python 3.12 or later, for the data preparation and the FireBench bundle.
-  The bundle also needs FireBench 0.10.0, `h5py` and `hdf5plugin`.
+- uv, tested with 0.13.5, for every Python command
+  (https://docs.astral.sh/uv/getting-started/installation/). The root
+  `pyproject.toml` and `uv.lock` define one environment for the data
+  preparation, the FireBench bundle and the FireBench oracle scripts.
+  `.python-version` selects Python 3.14. Run `uv sync` once to create
+  `.venv/`. The pyretechnics oracle script declares its own Python 3.12
+  environment, which `uv run` builds.
 - `cargo-nextest`, to run the test suite as shown below.
 
 ## Prepare the data
@@ -190,29 +195,37 @@ highest buffered Dice of the three entrants.
 The data is not in git. All data goes in `data/`, which git ignores. Set
 `FIRESPREAD_DATA` to use another folder.
 
-1. Install the prep package: `pip install -e python/firespread_prep`.
-2. Put the two WFIGS final perimeters in `data/wfigs/` and the two FEDS 2022
-   FlatGeobuf files in `data/feds/`. `python/firespread_prep/firespread_prep/paths.py`
-   gives the file names.
-3. Put the gridMET files `fm100_2022.nc` and `fm1000_2022.nc` in
-   `data/gridmet/`.
-4. Run the scripts in the order of this table, each as
-   `python -m firespread_prep.<name>`.
+1. Install the environment: `uv sync`.
+2. Download six files by hand. The scripts do not download them.
+   `docs/demo.md`, section 1, gives a `curl` command for each file.
 
-   | Order | Script | Output |
+   | File | Folder | Source |
    |---|---|---|
-   | 1 | `extent` | The grid, in `data/extent.json` |
-   | 2 | `feds_filter` | The FEDS rows of this fire |
-   | 3 | `windows` | The three windows, in `data/windows.json` |
-   | 4 | `hrrr_subset` | HRRR weather for each window hour |
-   | 5 | `gridmet_slice` | gridMET moisture for each window date |
-   | 6 | `lfps_submit submit`, then `lfps_submit poll` | The LANDFIRE layers |
-   | 7 | `align` | LANDFIRE layers on the grid |
-   | 8 | `feds_geojson` | FEDS perimeters as GeoJSON |
-   | 9 | `rasterize` | Observed perimeters on the grid |
-   | 10 | `roads_water` | Roads and water on the grid |
-   | 11 | `weather_align` | Weather on the grid |
-   | 12 | `hillshade` | The page's terrain shading |
+   | `hermits_peak_947.geojson` | `data/wfigs/` | WFIGS final perimeter, OBJECTID 947 |
+   | `calf_canyon_49422.geojson` | `data/wfigs/` | WFIGS final perimeter, OBJECTID 49422 |
+   | `feds_2022_lf_perimeter.fgb` | `data/feds/` | FEDS 2022, Zenodo record 22921773 |
+   | `feds_2022_lf_newfirepix.fgb` | `data/feds/` | FEDS 2022, Zenodo record 22921773 |
+   | `fm100_2022.nc` | `data/gridmet/` | gridMET 100-hour dead fuel moisture |
+   | `fm1000_2022.nc` | `data/gridmet/` | gridMET 1000-hour dead fuel moisture |
+
+3. Run the scripts in the order of this table, each as
+   `uv run python -m firespread_prep.<name>`. Each script reads the output of
+   the scripts before it. The scripts marked "yes" download their own data.
+
+   | Order | Script | Downloads | Output |
+   |---|---|---|---|
+   | 1 | `extent` | no | The grid, in `data/extent.json` |
+   | 2 | `feds_filter` | no | The FEDS rows of this fire |
+   | 3 | `windows` | no | The three windows, in `data/windows.json` |
+   | 4 | `hrrr_subset` | yes | HRRR weather for each window hour |
+   | 5 | `gridmet_slice` | no | gridMET moisture for each window date |
+   | 6 | `lfps_submit submit --email <your email>`, then `lfps_submit poll` | yes | The LANDFIRE layers, as `data/landfire/<jobId>.zip` |
+   | 7 | `align data/landfire/<jobId>.zip` | no | LANDFIRE layers on the grid |
+   | 8 | `feds_geojson` | no | FEDS perimeters as GeoJSON |
+   | 9 | `rasterize` | no | Observed perimeters on the grid |
+   | 10 | `roads_water` | yes | Roads and water on the grid |
+   | 11 | `weather_align` | no | Weather on the grid |
+   | 12 | `hillshade` | no | The page's terrain shading |
 
 `python/firespread_prep/README.md` describes each script and its inputs.
 
@@ -327,14 +340,14 @@ keyboard to see the text.
 
 ## FireBench bundle
 
-The module `python/firebench_case/bundle.py` packages the case in the
+The module `python/firebench_case/firebench_case/bundle.py` packages the case in the
 FireBench standard format v1.0, the format of FireBench's Caldor case. Run it
-from the `firespread` venv after you score the three runs:
+after you score the three runs:
 
 ```
-PYTHONPATH=python python -m firebench_case.bundle \
+uv run python -m firebench_case.bundle \
   --runs data/runs/s4-calib --data data --out data/firebench/hermits_peak
-PYTHONPATH=python python -m firebench_case.check \
+uv run python -m firebench_case.check \
   --bundle data/firebench/hermits_peak --runs data/runs/s4-calib --data data
 ```
 
@@ -373,11 +386,11 @@ differed by 0.0003 at most:
 cargo nextest run --workspace
 cargo nextest run --workspace --features firespread/serve
 cargo clippy --workspace --all-targets -- -D warnings
-python -m unittest discover -s python/firespread_prep/tests
-python -m unittest discover -s python/firebench_case/tests -t python
+uv run python -m unittest discover -s python/firespread_prep/tests
+uv run python -m unittest discover -s python/firebench_case/tests
 ```
 
-Run the two Python commands from the `firespread` venv. The Rothermel tests compare the engine with reference values from FireBench
+The Rothermel tests compare the engine with reference values from FireBench
 and pyretechnics. The reference values are stored as fixtures, so the tests do
 not need Python. `docs/oracle-differences.md` lists the known differences.
 

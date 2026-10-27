@@ -1,0 +1,19 @@
+[project]
+name = "firespread-python"
+version = "0.1.0"
+description = "Python environment for the firespread data preparation and FireBench bundle"
+requires-python = ">=3.12"
+dependencies = [
+    "firespread-prep",
+    "firebench-case",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["python/firespread_prep", "python/firebench_case"]
+
+[tool.uv.sources]
+firespread-prep = { workspace = true }
+firebench-case = { workspace = true }

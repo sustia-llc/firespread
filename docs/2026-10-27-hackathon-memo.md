@@ -18,7 +18,7 @@ Before 14:30 on 2026-10-27:
     two distance metrics
   - the three diagram links
   - the confusion map colors on the hillshade
-- [x] Build `data/runs/demo/` with `docs/demo.md` section 2. Done
+- [x] Build `data/runs/demo/` with `docs/demo.md` section 3. Done
   2026-10-26: the three scorecards hash to the C2 values.
 - [ ] Optional: issue #7 (page fixture) and issue #8 (`firebench_case`
   install).

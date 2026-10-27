@@ -1,10 +1,10 @@
 # firespread-prep
 
 Data preparation for the Hermits Peak / Calf Canyon 2022 case. Every script
-runs as `python -m firespread_prep.<name>` from the `firespread` venv. Each
-one reads and writes under the repository's gitignored `data/` directory.
-Set `FIRESPREAD_DATA` to use another directory. Install with
-`pip install -e python/firespread_prep`.
+runs as `uv run python -m firespread_prep.<name>` from the repository root.
+Each one reads and writes under the repository's gitignored `data/`
+directory. Set `FIRESPREAD_DATA` to use another directory. The package is a
+member of the root uv workspace. `uv sync` at the repository root installs it.
 
 ## extent
 
@@ -81,7 +81,7 @@ Asp use nearest resampling. The other layers use bilinear. CBH and CH are
 divided by 10, and CBD by 100. Writes one Float32 Deflate GeoTIFF per layer to
 `data/grid/<layer>.tif` with nodata -9999. `tests/test_align.py` runs it on a
 synthetic 3 by 3 raster. Run it with
-`python -m unittest discover -s python/firespread_prep/tests`.
+`uv run python -m unittest discover -s python/firespread_prep/tests`.
 
 ## feds_geojson
 

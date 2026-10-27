@@ -1,10 +1,86 @@
 # firespread demo
 
 This guide prepares and runs the hackathon demo. Run every command from the
-repository root. The commands assume the prepared data in `data/` (see the
-README, "Prepare the data").
+repository root.
 
-## 1. Build once
+## 1. Download and prepare the data
+
+All data goes in `data/`, which git ignores. The prep scripts need uv and
+network access. Create the Python environment once:
+
+```
+uv sync
+```
+
+### Files you download by hand
+
+The prep scripts read five files that you download first.
+
+The two official final perimeters come from the WFIGS interagency perimeter
+service, as GeoJSON in EPSG:4326. OBJECTID 947 is Hermits Peak and OBJECTID
+49422 is Calf Canyon:
+
+```
+curl -o data/wfigs/hermits_peak_947.geojson --create-dirs \
+  "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query?where=OBJECTID%3D947&outFields=*&f=geojson"
+curl -o data/wfigs/calf_canyon_49422.geojson --create-dirs \
+  "https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters/FeatureServer/0/query?where=OBJECTID%3D49422&outFields=*&f=geojson"
+```
+
+The FEDS 2022 perimeters come from Zenodo record 22921773 (CC-BY-4.0). FEDS
+is the NASA Fire Event Data Suite. The perimeter file is about 370 MB:
+
+```
+curl -L -o data/feds/feds_2022_lf_perimeter.fgb --create-dirs \
+  "https://zenodo.org/records/22921773/files/feds_2022_lf_perimeter.fgb?download=1"
+curl -L -o data/feds/feds_2022_lf_newfirepix.fgb --create-dirs \
+  "https://zenodo.org/records/22921773/files/feds_2022_lf_newfirepix.fgb?download=1"
+```
+
+The 100-hour and 1000-hour dead fuel moisture come from gridMET, about 130 MB
+each:
+
+```
+curl -o data/gridmet/fm100_2022.nc --create-dirs \
+  https://www.northwestknowledge.net/metdata/data/fm100_2022.nc
+curl -o data/gridmet/fm1000_2022.nc --create-dirs \
+  https://www.northwestknowledge.net/metdata/data/fm1000_2022.nc
+```
+
+### Files the scripts download
+
+Run the scripts in this order. Each script reads the output of the scripts
+before it.
+
+```
+uv run python -m firespread_prep.extent
+uv run python -m firespread_prep.feds_filter
+uv run python -m firespread_prep.windows
+uv run python -m firespread_prep.hrrr_subset
+uv run python -m firespread_prep.gridmet_slice
+uv run python -m firespread_prep.lfps_submit submit --email <your email>
+uv run python -m firespread_prep.lfps_submit poll
+uv run python -m firespread_prep.align data/landfire/<jobId>.zip
+uv run python -m firespread_prep.feds_geojson
+uv run python -m firespread_prep.rasterize
+uv run python -m firespread_prep.roads_water
+uv run python -m firespread_prep.weather_align
+uv run python -m firespread_prep.hillshade
+```
+
+Three scripts download data:
+
+- `hrrr_subset` gets the HRRR weather records from the NOAA S3 bucket.
+- `lfps_submit` gets the LANDFIRE fuel, canopy and terrain layers from the
+  LANDFIRE Product Service. The service needs an email address. `poll` waits
+  for the job and saves the zip as `data/landfire/<jobId>.zip`. Give that zip
+  to `align`.
+- `roads_water` gets roads from OpenStreetMap through Overpass, and water from
+  the USGS National Hydrography Dataset.
+
+`python/firespread_prep/README.md` describes each script and its outputs.
+
+## 2. Build once
 
 Build the `firespread` command and the `serve` example before the demo:
 
@@ -16,7 +92,7 @@ cargo build --release -p firespread --features serve --example serve
 The command is then `target/release/firespread`, and the server is
 `target/release/examples/serve`.
 
-## 2. Prepare the three demo runs
+## 3. Prepare the three demo runs
 
 Each window needs one ensemble run and one score. The runs go to
 `data/runs/demo/`, which git ignores. Set `--threads` to the number of CPU
@@ -54,7 +130,7 @@ runs, made with the same commands and configuration files, and scored. Their
 scores are the ones in the README. To use them, put `data/runs/s4-calib` in
 place of `data/runs/demo` in the server commands below.
 
-## 3. Start the page
+## 4. Start the page
 
 Start one server per window, each on its own port:
 
@@ -77,7 +153,7 @@ ssh -N -L 18761:127.0.0.1:8761 <user>@<demo-machine>
 Then open `http://localhost:18761/` on that computer. Run the browser on the
 same computer as the tunnel.
 
-## 4. Street basemap (optional)
+## 5. Street basemap (optional)
 
 If `data/basemap/region.pmtiles` exists, the page draws a street basemap. If it
 is missing, the page skips that layer. To make it, install the `pmtiles` CLI
@@ -91,7 +167,7 @@ pmtiles extract https://build.protomaps.com/20261025.pmtiles \
 
 The box is the run grid from `data/extent.json`. The extract is about 3.4 MB.
 
-## 5. What to show
+## 6. What to show
 
 ### The page
 
@@ -232,7 +308,7 @@ commands. Show that the four files pass FireBench's validators, and that
 FireBench's polygon Jaccard agrees with the scorecard within 0.0003 for all
 three entrants.
 
-## 6. Not built yet
+## 7. Not built yet
 
 These items are on the roadmap and are not in the demo:
 

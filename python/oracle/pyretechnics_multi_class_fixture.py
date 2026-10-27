@@ -1,9 +1,14 @@
+# /// script
+# requires-python = "==3.12.*"
+# dependencies = ["pyretechnics==2026.10.20"]
+# ///
 """Writes the pyretechnics multi-class oracle fixture.
 
 PYRETECHNICS developed by Spatial Informatics Group, LLC and contributors.
 
-Runs under the pyretechnics Community License in its own venv (Python 3.12).
-Calls
+Runs under the pyretechnics Community License in its own environment, which
+`uv run python/oracle/pyretechnics_multi_class_fixture.py` builds from the
+inline script metadata. Calls
 ``pyretechnics.fuel_models.get_fuel_model``, ``moisturize``,
 ``pyretechnics.surface_fire.calc_surface_fire_behavior_no_wind_no_slope`` and
 ``calc_surface_fire_behavior_max`` for all 40 Scott and Burgan models over the

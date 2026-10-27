@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "firebench-case"
+version = "0.1.0"
+description = "FireBench standard bundle of the firespread Hermits Peak / Calf Canyon 2022 case"
+requires-python = ">=3.12"
+dependencies = [
+    "firebench==0.10.0",
+    "h5py",
+    "hdf5plugin",
+    "matplotlib",
+    "numpy",
+    "pyproj",
+    "rasterio",
+]
+
+[tool.setuptools.packages.find]
+include = ["firebench_case*"]

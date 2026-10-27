@@ -34,7 +34,7 @@ from firebench.tools import (
 from firebench.tools.namespace import StandardVariableNames as svn
 from firebench.tools.units import ureg
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[3]
 SB40_CSV = REPO / "crates" / "firespread-fuel" / "data" / "data_ScottandBurgan40.csv"
 OUT_DIR = REPO / "data" / "anderson_2015"
 DATASET = "ros_model_validation/Anderson_2015"
