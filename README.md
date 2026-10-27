@@ -211,6 +211,8 @@ The data is not in git. All data goes in `data/`, which git ignores. Set
 3. Run the scripts in the order of this table, each as
    `uv run python -m firespread_prep.<name>`. Each script reads the output of
    the scripts before it. The scripts marked "yes" download their own data.
+   `<jobId>` is the ID that the LANDFIRE Product Service gives each request.
+   `poll` prints the zip path, so give that path to `align`.
 
    | Order | Script | Downloads | Output |
    |---|---|---|---|

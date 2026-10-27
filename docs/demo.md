@@ -73,8 +73,9 @@ Three scripts download data:
 - `hrrr_subset` gets the HRRR weather records from the NOAA S3 bucket.
 - `lfps_submit` gets the LANDFIRE fuel, canopy and terrain layers from the
   LANDFIRE Product Service. The service needs an email address. `poll` waits
-  for the job and saves the zip as `data/landfire/<jobId>.zip`. Give that zip
-  to `align`.
+  for the job and saves the zip as `data/landfire/<jobId>.zip`. `<jobId>` is
+  the ID that the service gives each request. `poll` prints the zip path, so
+  give that path to `align`.
 - `roads_water` gets roads from OpenStreetMap through Overpass, and water from
   the USGS National Hydrography Dataset.
 
