@@ -49,6 +49,19 @@ curl -o data/gridmet/fm1000_2022.nc --create-dirs \
 
 ### Files the scripts download
 
+Three scripts download data:
+
+- `hrrr_subset` gets the HRRR weather records from the NOAA S3 bucket.
+- `lfps_submit` gets the LANDFIRE fuel, canopy and terrain layers from the
+  LANDFIRE Product Service. The service needs an email address. `poll` waits
+  for the job and saves the zip as `data/landfire/<jobId>.zip`. `<jobId>` is
+  the ID that the service gives each request. `poll` prints the zip path, so
+  give that path to `align`.
+- `roads_water` gets roads from OpenStreetMap through Overpass, and water from
+  the USGS National Hydrography Dataset.
+
+`python/firespread_prep/README.md` describes each script and its outputs.
+
 Run the scripts in this order. Each script reads the output of the scripts
 before it.
 
@@ -67,19 +80,6 @@ uv run python -m firespread_prep.roads_water
 uv run python -m firespread_prep.weather_align
 uv run python -m firespread_prep.hillshade
 ```
-
-Three scripts download data:
-
-- `hrrr_subset` gets the HRRR weather records from the NOAA S3 bucket.
-- `lfps_submit` gets the LANDFIRE fuel, canopy and terrain layers from the
-  LANDFIRE Product Service. The service needs an email address. `poll` waits
-  for the job and saves the zip as `data/landfire/<jobId>.zip`. `<jobId>` is
-  the ID that the service gives each request. `poll` prints the zip path, so
-  give that path to `align`.
-- `roads_water` gets roads from OpenStreetMap through Overpass, and water from
-  the USGS National Hydrography Dataset.
-
-`python/firespread_prep/README.md` describes each script and its outputs.
 
 ## 2. Build once
 
