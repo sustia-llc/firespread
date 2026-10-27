@@ -192,7 +192,8 @@
         fix.lat.toFixed(4) + ", " + fix.lon.toFixed(4) + " ± " + Math.round(radius) + " m<br>" +
         "nodes: " + usedIds.join(", ") + "<br>" +
         "first alert " + fmtTime(firstAlertMs) + ", confirmed " + fmtTime(firstFixMs) +
-        " (" + Math.round((firstFixMs - firstAlertMs) / 1000) + " s)";
+        " (" + Math.round((firstFixMs - firstAlertMs) / 1000) + " s)<br>" +
+        '<a href="index.html" target="_blank" rel="noopener">burn-probability forecast</a> (served run, starts from its own perimeter, not this fix)';
     } else if (active.length > 0) {
       card.className = "state-single";
       label.textContent = "Unconfirmed: " + active.length + (active.length === 1 ? " node" : " nodes, no agreement");

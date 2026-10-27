@@ -39,6 +39,10 @@ Settings on the dashboard: the alert window (seconds an alert stays active,
 default 30) and the minimum confidence. "Reset alerts" clears the server for
 every viewer.
 
+A confirmed fix shows a link to the burn-probability page (`index.html`) of
+the run that `serve` loads with `--run`. That run starts from its own
+perimeter, not from the fix.
+
 ## 2. A detector node (laptop)
 
 Install once, on good network, in its own environment. The `yolov5`
