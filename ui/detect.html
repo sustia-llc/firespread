@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>firespread detection mesh</title>
+    <link rel="stylesheet" href="vendor/leaflet-1.9.4/leaflet.css" />
+    <link rel="stylesheet" href="detect.css" />
+  </head>
+  <body>
+    <header>
+      <h1>firespread · detection mesh</h1>
+      <span class="meta" id="mesh-name">-</span>
+      <span id="conn" class="mono">connecting</span>
+    </header>
+    <main>
+      <div id="map"></div>
+      <aside>
+        <section id="status-card" class="state-none">
+          <div class="state-label" id="state-label">No smoke reported</div>
+          <div id="state-detail" class="detail">Nodes are watching.</div>
+        </section>
+        <section>
+          <h2>Nodes</h2>
+          <table id="node-table"><thead><tr><th>node</th><th>last alert</th><th>conf</th><th>bearing</th></tr></thead><tbody></tbody></table>
+        </section>
+        <section>
+          <h2>Settings</h2>
+          <div class="row"><label for="window-s">alert window</label><input id="window-s" type="number" min="5" max="600" step="5" value="30" /> s</div>
+          <div class="row"><label for="min-conf">min confidence</label><input id="min-conf" type="number" min="0" max="1" step="0.05" value="0.35" /></div>
+          <div class="row"><button id="reset" type="button">Reset alerts</button><a href="node.html" target="_blank" rel="noopener">phone node</a></div>
+        </section>
+        <section>
+          <h2>Alert feed</h2>
+          <ol id="feed" class="mono"></ol>
+        </section>
+        <p class="note" id="mesh-note"></p>
+      </aside>
+    </main>
+    <script src="vendor/leaflet-1.9.4/leaflet.js"></script>
+    <script src="detect.js"></script>
+  </body>
+</html>
