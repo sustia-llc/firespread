@@ -170,6 +170,21 @@ The box is the run grid from `data/extent.json`. The extract is about 3.4 MB.
 
 ## 6. What to show
 
+### The detection mesh
+
+`docs/edge-detect.md` gives the commands. For the forecast link on the
+dashboard, start the server with `--run data/runs/demo/w1-seed7-m200` in
+place of the fixture run. Show these steps:
+
+1. Run the scripted scenario. A cloud seen by White Rock stays
+   "Unconfirmed: 1 node".
+2. Pajarito Mountain and the townsite cross, and the panel reads "Smoke
+   confirmed". The fix carries an error circle.
+3. Run the scenario again with `--target nnw`. The NNW townsite camera,
+   White Rock and Bandelier confirm a fire north of town.
+4. Select "burn-probability forecast" in the confirmed panel to open the
+   forecast page.
+
 ### The page
 
 1. Move the hour slider from h+1 to h+12. The colored area grows from the start
@@ -314,6 +329,7 @@ three entrants.
 These items are on the roadmap and are not in the demo:
 
 - Crown fire.
+- A forecast that starts from a confirmed detection fix.
 - Lean proofs (Phase 5a, after the hackathon). The first proofs cover the
   metrics: Jaccard and Dice lie in [0, 1], and Dice equals 2J / (1 + J). Later
   proofs cover the Rothermel factor algebra and the unit conversions. Each

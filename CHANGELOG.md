@@ -31,6 +31,9 @@ The first release, planned as `v0.1.0` after the hackathon review.
   dashboard `detect.html` that triangulates smoke from node bearings, the
   phone node `node.html`, and the `python/edge_node` package (a YOLO smoke
   detector over video, and a scripted scenario). See `docs/edge-detect.md`.
+- Detection mesh: a confirmed fix links to the burn probability page. The
+  NNW townsite camera `fuller-lodge-nnw`, and named scenario targets
+  (`--target nnw`).
 - Static page and its `serve` example: burn probability by hour, the
   confusion map, the observed perimeter, hillshade, street basemap, the
   scorecard chart, the WFIGS table, the burned area chart, help texts and

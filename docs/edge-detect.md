@@ -40,7 +40,9 @@ default 30) and the minimum confidence. "Reset alerts" clears the server for
 every viewer.
 
 A confirmed fix shows a link to the burn-probability page (`index.html`) of
-the run that `serve` loads with `--run`. That run starts from its own
+the run that `serve` loads with `--run`. The fixture run is a small test
+grid. For the demo, use `--run data/runs/demo/w1-seed7-m200` (`docs/demo.md`,
+section 3). That run starts from its own
 perimeter, not from the fix.
 
 ## 2. A detector node (laptop)

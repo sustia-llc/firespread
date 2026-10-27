@@ -8,6 +8,10 @@ fire that really happened, and with two simple reference forecasts.
 The project is an entry for the HAIIC Embers to Aftermath hackathon in Santa Fe
 on 2026-10-27. Its test case is the Hermits Peak and Calf Canyon fire of 2022.
 
+The project also has a detection mesh demo. Camera nodes report the compass
+bearing to smoke, and a dashboard confirms a fire where two or more bearings
+cross. See "Detection mesh" below.
+
 ## Why a scorecard
 
 If fire managers do not know how good a forecast is, they do not use it. A scorecard
@@ -174,7 +178,8 @@ highest buffered Dice of the three entrants.
 | `python/firespread_prep` | Data download and alignment scripts. See its README. |
 | `python/oracle` | Scripts that write reference values from FireBench and pyretechnics for the Rust tests. |
 | `python/firebench_case` | The FireBench bundle of the case, its check against the scorecards, and the Anderson 2015 comparison. |
-| `ui/` | The static web page. |
+| `python/edge_node` | The detection node: a YOLO smoke detector over video, and the scripted scenario. |
+| `ui/` | The static web page, the detection dashboard `detect.html`, the phone node `node.html` and the mesh files in `ui/nodes/`. |
 | `config/` | Run configurations. |
 | `docs/` | The demo guide, notes on differences against the reference models, and the diagrams of this file. |
 
@@ -302,6 +307,25 @@ The `[night_moisture]` table takes these keys:
 | `start_local`, `end_local` | Night period in local time, from Rothermel (1983) INT-143 Table E. | `"20:00"`, `"07:59"` |
 | `utc_offset_h` | Hours from UTC to local time. | `-6` (MDT) |
 
+## Detection mesh
+
+A simulation of a smoke-detection mesh around Los Alamos. Laptops and phones
+stand in for camera nodes. Each node posts an alert to the `serve` example:
+node id, position, bearing to the smoke, confidence and time. The dashboard
+`detect.html` draws each bearing and triangulates the smoke where two or more
+bearings agree. An alert from one node stays unconfirmed, so a cloud seen by
+one camera raises no alarm.
+
+The detector, the alert network and the triangulation are real code. The node
+positions are approximate public viewpoints, not surveyed sites. The scripted
+scenario posts bearings to a target in the mesh file, with Gaussian noise. A
+confirmed fix links to the burn probability page of the run that `serve`
+loads. That run starts from its own perimeter, not from the fix.
+
+The mesh file `ui/nodes/los-alamos.json` holds five camera nodes and two
+scenario targets. `docs/edge-detect.md` gives the commands for the server,
+the nodes, the scripted scenario and the tests.
+
 ## Demo
 
 `docs/demo.md` gives the commands for the demo runs, the page servers and a
@@ -316,8 +340,9 @@ cargo run --release -p firespread --features serve --example serve -- \
   --run data/runs/w1-seed7-m200 --port 8765
 ```
 
-Open `http://127.0.0.1:8765/`. The server listens on 127.0.0.1 only. The page
-works offline, because all its libraries are in `ui/vendor/`.
+Open `http://127.0.0.1:8765/`. The server listens on 127.0.0.1 unless
+`--bind` names another address. Every response carries
+`Cache-Control: no-cache`. The page works offline, because all its libraries are in `ui/vendor/`.
 
 The page shows:
 
@@ -390,6 +415,7 @@ cargo nextest run --workspace --features firespread/serve
 cargo clippy --workspace --all-targets -- -D warnings
 uv run python -m unittest discover -s python/firespread_prep/tests
 uv run python -m unittest discover -s python/firebench_case/tests
+(cd python/edge_node && uv run --no-project --with pytest python -m pytest tests)
 ```
 
 The Rothermel tests compare the engine with reference values from FireBench
