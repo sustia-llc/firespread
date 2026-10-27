@@ -20,9 +20,10 @@ Before 14:30 on 2026-10-27:
   - the confusion map colors on the hillshade
 - [x] Build `data/runs/demo/` with `docs/demo.md` section 3. Done
   2026-10-26: the three scorecards hash to the C2 values.
-- [ ] Optional: issue #7 (page fixture) and issue #8 (`firebench_case`
-  install).
-- [ ] 14:30: create the branch `freeze/hackathon` from `main`.
+- [x] Issue #8 (`firebench_case` install). Closed 2026-10-27 at `93397fc`.
+- [ ] Optional: issue #7 (page fixture).
+- [ ] 14:50: create the branch `freeze/hackathon` from `main`. The freeze
+  moved from 14:30 for the camera detection pivot.
 - [ ] Take screenshots: the w1 probability map at h+12, the w1 confusion map,
   the scorecard at Jaccard and at buffered Dice.
 - [ ] Copy the score tables from the README into the pitch.
