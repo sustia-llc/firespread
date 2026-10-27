@@ -27,6 +27,10 @@ The first release, planned as `v0.1.0` after the hackathon review.
   `uniform_growth_h<N>.tif`.
 - Configuration files `config/default.toml` and `config/w3.toml`, with the
   wind speed perturbation sd of 0.4 calibrated on window w1.
+- Detection mesh demo: `serve --bind` and an in-memory `/api/alerts`, the
+  dashboard `detect.html` that triangulates smoke from node bearings, the
+  phone node `node.html`, and the `python/edge_node` package (a YOLO smoke
+  detector over video, and a scripted scenario). See `docs/edge-detect.md`.
 - Static page and its `serve` example: burn probability by hour, the
   confusion map, the observed perimeter, hillshade, street basemap, the
   scorecard chart, the WFIGS table, the burned area chart, help texts and

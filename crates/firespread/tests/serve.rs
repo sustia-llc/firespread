@@ -216,3 +216,65 @@ async fn write_methods_are_not_served() {
     assert_eq!(status_line, "HTTP/1.1 405", "PUT status line");
     assert_eq!(read(&tree.root.join("run/manifest.json")), MANIFEST);
 }
+
+/// Sends `<method> <target>` with a JSON body and returns the status and body.
+async fn send_json(addr: SocketAddr, method: &str, target: &str, body: &str) -> (u16, Vec<u8>) {
+    let request = format!(
+        "{method} {target} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let raw = exchange(addr, request).await;
+    let split = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .expect("response has a header terminator");
+    let status: u16 = std::str::from_utf8(&raw[9..12]).unwrap().parse().unwrap();
+    (status, raw[split + 4..].to_vec())
+}
+
+fn alert_json(node: &str, lat: f64, bearing: f64) -> String {
+    format!(
+        r#"{{"node_id":"{node}","lat":{lat},"lon":-106.3,"bearing_deg":{bearing},"confidence":0.8,"label":"smoke","t":"2026-10-27T10:00:00Z","source":"sim"}}"#
+    )
+}
+
+#[tokio::test]
+async fn alerts_are_stored_paged_and_reset() {
+    let tree = Tree::new("alerts");
+    let addr = spawn(&tree.dirs()).await;
+    let (status, body) =
+        send_json(addr, "POST", "/api/alerts", &alert_json("a", 35.8, -10.0)).await;
+    assert_eq!(status, 201);
+    let stored: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(stored["seq"], 1);
+    assert_eq!(stored["bearing_deg"], 350.0, "bearing wraps into [0, 360)");
+    let (status, _) = send_json(addr, "POST", "/api/alerts", &alert_json("b", 35.9, 90.0)).await;
+    assert_eq!(status, 201);
+
+    let page: serde_json::Value =
+        serde_json::from_slice(&get(addr, "/api/alerts?after=1").await.body).unwrap();
+    assert_eq!(page["last_seq"], 2);
+    let alerts = page["alerts"].as_array().unwrap();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0]["node_id"], "b");
+
+    let (status, _) = send_json(addr, "DELETE", "/api/alerts", "").await;
+    assert_eq!(status, 204);
+    let page: serde_json::Value =
+        serde_json::from_slice(&get(addr, "/api/alerts").await.body).unwrap();
+    assert_eq!(page["alerts"].as_array().unwrap().len(), 0);
+    assert_eq!(page["reset_seq"], 2);
+}
+
+#[tokio::test]
+async fn invalid_alerts_are_rejected() {
+    let tree = Tree::new("bad-alerts");
+    let addr = spawn(&tree.dirs()).await;
+    let (status, _) = send_json(addr, "POST", "/api/alerts", &alert_json("a", 95.0, 10.0)).await;
+    assert_eq!(status, 422, "latitude out of range");
+    let (status, _) = send_json(addr, "POST", "/api/alerts", &alert_json("", 35.0, 10.0)).await;
+    assert_eq!(status, 422, "empty node id");
+    let page: serde_json::Value =
+        serde_json::from_slice(&get(addr, "/api/alerts").await.body).unwrap();
+    assert_eq!(page["last_seq"], 0);
+}

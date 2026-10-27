@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>firespread phone node</title>
+    <style>
+      :root { --bg: #f6f4f0; --fg: #22201c; --muted: #5d5850; --rule: #ddd6cb; --alarm: #b3261e; font-family: system-ui, -apple-system, sans-serif; }
+      body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); max-width: 32rem; margin-inline: auto; }
+      h1 { font-size: 1.2rem; margin: 0 0 .25rem; }
+      p { color: var(--muted); margin: 0 0 1rem; font-size: .9rem; }
+      label { display: block; font-weight: 600; margin: 1rem 0 .3rem; }
+      select, input[type=number] { font-size: 1.1rem; padding: .4rem; width: 100%; box-sizing: border-box; }
+      input[type=range] { width: 100%; }
+      .bearing { font: 700 2.4rem ui-monospace, Menlo, monospace; text-align: center; margin: .5rem 0; }
+      button { font-size: 1.1rem; padding: .8rem; width: 100%; border-radius: 8px; border: 1px solid var(--rule); margin-top: .6rem; background: #fff; }
+      button.report { background: var(--alarm); color: #fff; border: none; font-size: 1.4rem; padding: 1.1rem; font-weight: 700; }
+      #result { margin-top: 1rem; font-family: ui-monospace, Menlo, monospace; font-size: .9rem; min-height: 1.5rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Phone node</h1>
+    <p>Report smoke as one node of the mesh: pick the node you stand in for, set the bearing to the smoke, and press Report. The alert goes to the dashboard as a human report.</p>
+    <label for="node">Node</label>
+    <select id="node"></select>
+    <label for="bearing-range">Bearing to the smoke (degrees from north)</label>
+    <div class="bearing" id="bearing-out">0°</div>
+    <input id="bearing-range" type="range" min="0" max="359" step="1" value="0" />
+    <input id="bearing" type="number" min="0" max="359.9" step="0.5" value="0" aria-label="bearing in degrees" />
+    <button type="button" id="aim">Demo: aim at the scenario target</button>
+    <button type="button" class="report" id="report">Report smoke</button>
+    <div id="result"></div>
+    <script>
+      (function () {
+        "use strict";
+        var mesh = new URLSearchParams(location.search).get("mesh") || "los-alamos";
+        var sel = document.getElementById("node");
+        var range = document.getElementById("bearing-range");
+        var num = document.getElementById("bearing");
+        var out = document.getElementById("bearing-out");
+        var result = document.getElementById("result");
+        var nodes = {};
+        var target = null;
+
+        function setBearing(b) {
+          b = ((Number(b) % 360) + 360) % 360;
+          range.value = Math.round(b) % 360;
+          num.value = b.toFixed(1);
+          out.textContent = b.toFixed(1) + "°";
+        }
+        range.addEventListener("input", function () { setBearing(range.value); });
+        num.addEventListener("input", function () { setBearing(num.value); });
+
+        function bearingTo(lat1, lon1, lat2, lon2) {
+          var r = Math.PI / 180, p1 = lat1 * r, p2 = lat2 * r, dl = (lon2 - lon1) * r;
+          var y = Math.sin(dl) * Math.cos(p2);
+          var x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+          return (Math.atan2(y, x) / r + 360) % 360;
+        }
+
+        document.getElementById("aim").addEventListener("click", function () {
+          var n = nodes[sel.value];
+          if (!n || !target) { result.textContent = "no scenario target in the mesh file"; return; }
+          setBearing(bearingTo(n.lat, n.lon, target[0], target[1]) + (Math.random() - 0.5) * 3);
+        });
+
+        document.getElementById("report").addEventListener("click", function () {
+          var n = nodes[sel.value];
+          if (!n) return;
+          var body = {
+            node_id: n.id, lat: n.lat, lon: n.lon,
+            bearing_deg: Number(num.value), confidence: 0.9, label: "smoke",
+            t: new Date().toISOString().replace(/\.\d+Z$/, "Z"), source: "phone",
+          };
+          fetch("api/alerts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+            .then(function (r) { return r.ok ? r.json() : r.text().then(function (t) { throw new Error(t || r.status); }); })
+            .then(function (a) { result.textContent = "sent #" + a.seq + " from " + a.node_id + " at " + a.bearing_deg.toFixed(1) + "°"; })
+            .catch(function (e) { result.textContent = "failed: " + e.message; });
+        });
+
+        fetch("nodes/" + encodeURIComponent(mesh) + ".json")
+          .then(function (r) { return r.json(); })
+          .then(function (m) {
+            target = m.scenario && m.scenario.target;
+            m.nodes.forEach(function (n) {
+              nodes[n.id] = n;
+              var o = document.createElement("option");
+              o.value = n.id;
+              o.textContent = n.name + " (" + n.id + ")";
+              sel.appendChild(o);
+            });
+            setBearing(m.nodes[0].heading_deg);
+            sel.addEventListener("change", function () { setBearing(nodes[sel.value].heading_deg); });
+          })
+          .catch(function (e) { result.textContent = "cannot load mesh: " + e.message; });
+      })();
+    </script>
+  </body>
+</html>
