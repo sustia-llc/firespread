@@ -181,7 +181,7 @@ highest buffered Dice of the three entrants.
 | `python/edge_node` | The detection node: a YOLO smoke detector over video, and the scripted scenario. |
 | `ui/` | The static web page, the detection dashboard `detect.html`, the phone node `node.html` and the mesh files in `ui/nodes/`. |
 | `config/` | Run configurations. |
-| `docs/` | The demo guide, notes on differences against the reference models, and the diagrams of this file. |
+| `docs/` | The demo guide, notes on differences against the reference models, and the diagrams and screenshots of this file. |
 
 ## Requirements
 
@@ -316,6 +316,8 @@ node id, position, bearing to the smoke, confidence and time. The dashboard
 bearings agree. An alert from one node stays unconfirmed, so a cloud seen by
 one camera raises no alarm.
 
+![Detection dashboard: bearings from Pajarito Mountain, the Los Alamos townsite and Bandelier cross at a smoke fix at 35.8291, -106.3588 ± 250 m. The status reads Smoke confirmed by 3 nodes. Confirmation came 16 s after the first alert. The panel links to the burn-probability forecast.](docs/images/detect-confirmed.png)
+
 The detector, the alert network and the triangulation are real code. The node
 positions are approximate public viewpoints, not surveyed sites. The scripted
 scenario posts bearings to a target in the mesh file, with Gaussian noise. A
@@ -343,6 +345,8 @@ cargo run --release -p firespread --features serve --example serve -- \
 Open `http://127.0.0.1:8765/`. The server listens on 127.0.0.1 unless
 `--bind` names another address. Every response carries
 `Cache-Control: no-cache`. The page works offline, because all its libraries are in `ui/vendor/`.
+
+![Forecast page for run w1-seed7-m200. The map shows the burn probability at h+1 and the dashed observed perimeter of the Hermits Peak and Calf Canyon fire. The side panel shows the Jaccard scorecard, the WFIGS table and the burned area by hour.](docs/images/forecast-w1.png)
 
 The page shows:
 
